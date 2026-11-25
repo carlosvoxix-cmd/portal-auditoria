@@ -75,6 +75,9 @@ td.mono{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
 .tic:hover{border-color:var(--ok);color:var(--ok)}
 .tic.on{background:var(--ok);border-color:var(--ok);color:#fff}
 tr.visto td:not(:first-child){opacity:.6}
+textarea.cel{min-height:0;resize:vertical;font:inherit;font-size:13px;padding:4px 6px}
+input.cel{font-size:13px}
+.cel.falta{border-color:var(--bad);background:var(--bad-soft)}
 .rec-aviso{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:8px 10px;font-weight:600}
 .rep-aviso{background:var(--bad-soft,#fde8e8);color:var(--bad,#b3261e);border-radius:6px;padding:8px 10px;font-weight:600}
 .resbox{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -822,7 +825,7 @@ function minhas(){
   bindPeriodo(); $('#x-cli').value=exCod; $('#x-cli').onchange=ev=>{exCod=ev.target.value;render()};
   bindCards('exec');
 }
-let cliBusca='', cliEdit=null, cliInat=false;
+let cliBusca='', cliEdit=null, cliInat=false, cliIncomp=false;
 const SISTEMAS=['SAP B1','Domínio','Protheus','LINX','Outro'];
 function formCliente(c,novo){
   const ops=(l,v)=>[...new Set(['',...l,v||''])].map(o=>`<option value="${esc(o)}"${o===(v||'')?' selected':''}>${esc(o||'Escolha…')}</option>`).join('');
@@ -831,14 +834,14 @@ function formCliente(c,novo){
    <div class="row" style="align-items:flex-end">
     <div class="field"><label for="ce-cod">Código</label><input id="ce-cod" value="${esc(c.cod||'')}" ${novo?'':'readonly'} style="width:90px"></div>
     <div class="field" style="flex:1;min-width:240px"><label for="ce-nome">Razão social</label><input id="ce-nome" value="${esc(c.nome||'')}"></div>
-    <div class="field" style="min-width:200px"><label for="ce-grupo">Grupo</label><input id="ce-grupo" value="${esc(c.grupo||'')}"></div>
-    <div class="field"><label for="ce-trib">Tributação</label><input id="ce-trib" value="${esc(c.trib||'')}" list="ce-tribs"><datalist id="ce-tribs">${[...new Set(S.clientes.map(x=>x.trib).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+    <div class="field" style="min-width:200px"><label for="ce-grupo">Grupo</label><input id="ce-grupo" value="${esc(c.grupo||'')}" placeholder="Obrigatório"></div>
+    <div class="field"><label for="ce-trib">Tributação</label><input id="ce-trib" value="${esc(c.trib||'')}" list="ce-tribs" placeholder="Obrigatório"></div>
    </div>
    <div class="row" style="align-items:flex-end">
     <div class="field"><label for="ce-ex">Executivo</label><select id="ce-ex">${S.execs.map(e=>`<option value="${e.id}"${e.id===c.exec?' selected':''}>${esc(e.nome)}</option>`).join('')}<option value="__novo">+ Novo executivo…</option></select></div>
     <div class="field" id="ce-exn-w" hidden><label for="ce-exn">Nome do novo executivo</label><input id="ce-exn"></div>
-    <div class="field" style="min-width:200px"><label for="ce-coord">Coordenador</label><input id="ce-coord" value="${esc(c.coord||'')}" list="ce-coords"><datalist id="ce-coords">${[...new Set(S.clientes.map(x=>x.coord).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
-    <div class="field" style="min-width:200px"><label for="ce-an">Analista</label><input id="ce-an" value="${esc(c.analista||'')}" list="ce-ans"><datalist id="ce-ans">${[...new Set(S.clientes.map(x=>x.analista).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+    <div class="field" style="min-width:200px"><label for="ce-coord">Coordenador</label><input id="ce-coord" value="${esc(nomeCurto(c.coord||''))}" list="ce-coords"></div>
+    <div class="field" style="min-width:200px"><label for="ce-an">Analista</label><input id="ce-an" value="${esc(nomeCurto(c.analista||''))}" list="ce-ans"></div>
     <div class="field"><label for="ce-sis">Sistema</label><select id="ce-sis">${ops(SISTEMAS,c.sistema)}</select></div>
    </div>
    <div class="row"><button class="btn sm" id="ce-ok">${novo?'Incluir cliente':'Salvar'}</button><button class="btn sm ghost" id="ce-x">Cancelar</button>
@@ -847,16 +850,27 @@ function formCliente(c,novo){
   </div></td></tr>`;
 }
 function clientesView(){
-  const q=norm(cliBusca); const lista=S.clientes.filter(c=>(cliInat||!c.inativo)&&(!q||norm(c.cod+' '+c.nome+' '+(c.grupo||'')+' '+execNome(c.exec)+' '+(c.analista||'')).includes(q)));
+  const incomp=ATIVOS().filter(c=>!c.grupo||!c.trib).length; if(!incomp) cliIncomp=false;
+  const q=norm(cliBusca); const lista=S.clientes.filter(c=>(cliInat||!c.inativo)&&(!cliIncomp||(!c.inativo&&(!c.grupo||!c.trib)))&&(!q||norm(c.cod+' '+c.nome+' '+(c.grupo||'')+' '+execNome(c.exec)+' '+(c.analista||'')).includes(q)));
   const nInat=S.clientes.filter(c=>c.inativo).length;
   $('#view').innerHTML=`<div><h1>Clientes e premissas</h1><p class="lead">Importe a carteira no mesmo formato da planilha do Thiago, ou inclua e edite clientes aqui. Os limites de PMP e PMR e as premissas desligadas valem só para o cliente.</p></div>
   <div class="row"><label class="btn ghost" style="display:inline-block">Importar carteira (Excel)<input type="file" id="imp" accept=".xlsx,.xls" hidden></label><button class="btn" id="cli-novo">+ Novo cliente</button>
    <div class="field"><label for="cli-q">Buscar</label><input id="cli-q" value="${esc(cliBusca)}" placeholder="Código, nome, grupo, executivo ou analista" style="min-width:280px"></div>
    ${nInat?`<label class="muted"><input type="checkbox" id="cli-in" ${cliInat?'checked':''}> Mostrar inativos (${nInat})</label>`:''}
    <span class="muted">${ATIVOS().length} clientes ativos · ${ATIVOS().filter(c=>S.balancetes[c.cod]).length} com balancete${q?' · '+lista.length+' na busca':''}</span></div>
-  <div class="tbl"><table><thead><tr><th></th><th>Código</th><th>Cliente</th><th>Grupo</th><th>Tributação</th><th>Executivo</th><th>Coordenador</th><th>Analista</th><th>Sistema</th><th class="num">PMP limite</th><th class="num">PMR limite</th><th>Premissas desligadas</th><th class="num">Particularidades</th><th>Histórico</th></tr></thead><tbody>
+  <datalist id="ce-tribs">${[...new Set(S.clientes.map(x=>x.trib).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+  <datalist id="ce-coords">${[...new Set(S.clientes.map(x=>nomeCurto(x.coord)).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+  <datalist id="ce-ans">${[...new Set(S.clientes.map(x=>nomeCurto(x.analista)).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+  ${incomp?`<p style="margin:0;color:var(--bad)"><b>${incomp} clientes ativos sem Grupo ou Tributação.</b> <label class="muted"><input type="checkbox" id="cli-inc" ${cliIncomp?'checked':''}> Mostrar só esses</label></p>`:''}
+  <div class="tbl"><table><thead><tr><th></th><th>Código</th><th>Cliente</th><th>Grupo *</th><th>Tributação *</th><th>Executivo</th><th>Coordenador</th><th>Analista</th><th>Sistema</th><th class="num">PMP limite</th><th class="num">PMR limite</th><th>Premissas desligadas</th><th class="num">Particularidades</th><th>Histórico</th></tr></thead><tbody>
   ${cliEdit==='__novo'?formCliente({pmp:60,pmr:45,exec:(S.execs[0]||{}).id},true):''}
-  ${lista.map(c=>{const i=S.clientes.indexOf(c);return `<tr${c.inativo?' style="opacity:.55"':''}><td><button class="btn sm ghost" data-ced="${esc(c.cod)}">Editar</button></td><td class="mono">${c.cod}${c.inativo?' <span class="pill p-Desconsiderada">inativo</span>':''}</td><td>${esc(c.nome)}</td><td>${esc(c.grupo||'')}</td><td>${esc(c.trib||'')}</td><td>${esc(execNome(c.exec))}</td><td>${esc(nomeCurto(c.coord))}</td><td>${esc(nomeCurto(c.analista))}</td>
+  ${lista.map(c=>{const i=S.clientes.indexOf(c);return `<tr${c.inativo?' style="opacity:.55"':''}><td><button class="btn sm ghost" data-ced="${esc(c.cod)}">Editar</button></td><td class="mono">${c.cod}${c.inativo?' <span class="pill p-Desconsiderada">inativo</span>':''}</td>
+   <td><textarea class="cel" rows="2" data-i="${i}" data-k="nome" aria-label="Razão social ${c.cod}" style="min-width:200px">${esc(c.nome||'')}</textarea></td>
+   <td><textarea class="cel${c.grupo?'':' falta'}" rows="2" data-i="${i}" data-k="grupo" aria-label="Grupo ${c.cod}" placeholder="Obrigatório" style="min-width:170px">${esc(c.grupo||'')}</textarea></td>
+   <td><input class="cel${c.trib?'':' falta'}" data-i="${i}" data-k="trib" list="ce-tribs" aria-label="Tributação ${c.cod}" placeholder="Obrigatório" value="${esc(c.trib||'')}" style="min-width:140px"></td>
+   <td><select data-i="${i}" data-k="exec" aria-label="Executivo ${c.cod}">${S.execs.map(e=>`<option value="${e.id}"${e.id===c.exec?' selected':''}>${esc(e.nome)}</option>`).join('')}</select></td>
+   <td><input class="cel" data-i="${i}" data-k="coord" list="ce-coords" aria-label="Coordenador ${c.cod}" value="${esc(nomeCurto(c.coord))}" style="min-width:150px"></td>
+   <td><input class="cel" data-i="${i}" data-k="analista" list="ce-ans" aria-label="Analista ${c.cod}" value="${esc(nomeCurto(c.analista))}" style="min-width:150px"></td>
    <td><select id="sis-${i}" data-i="${i}" data-k="sistema" aria-label="Sistema do cliente ${c.cod}" style="min-width:110px">${[...new Set(['',...SISTEMAS,c.sistema||''])].map(o=>`<option value="${esc(o)}"${o===(c.sistema||'')?' selected':''}>${o||'Escolha…'}</option>`).join('')}</select></td>
    <td class="num"><input type="number" id="pmp-${i}" value="${c.pmp}" style="width:70px" data-i="${i}" data-k="pmp"></td>
    <td class="num"><input type="number" id="pmr-${i}" value="${c.pmr}" style="width:70px" data-i="${i}" data-k="pmr"></td>
@@ -866,7 +880,15 @@ function clientesView(){
   </tbody></table></div>
   <div><h2>Premissas gerais aplicadas a todos</h2><div class="tbl"><table><thead><tr><th>ID</th><th>Premissa</th><th>Criticidade</th></tr></thead><tbody>
   ${PREMISSAS.map(p=>`<tr><td class="mono">${p.id}</td><td>${esc(p.nome)}</td><td><span class="sev sev-${p.sev}"></span>${p.sev}</td></tr>`).join('')}</tbody></table></div></div>`;
-  document.querySelectorAll('.tbl input[data-k],.tbl select[data-k]').forEach(inp=>inp.onchange=()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
+  if($('#cli-inc')) $('#cli-inc').onchange=e=>{cliIncomp=e.target.checked;render()};
+  document.querySelectorAll('.tbl input[data-k],.tbl select[data-k],.tbl textarea[data-k]').forEach(inp=>inp.onchange=async()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
+    if(['nome','grupo','trib','coord','analista'].includes(k)){const v=inp.value.trim();
+      if(k==='nome'&&!v){inp.value=c.nome;return toast('A razão social não pode ficar vazia')}
+      if((k==='coord'||k==='analista')&&v===nomeCurto(c[k]))return;
+      c[k]=v; inp.classList.toggle('falta',(k==='grupo'||k==='trib')&&!v); save(); return toast('Cliente '+c.cod+' atualizado')}
+    if(k==='exec'){const ex=inp.value; if(ex===c.exec) return; c.exec=ex; S.pend.filter(p=>p.cod===c.cod).forEach(p=>p.exec=ex);
+      if(typeof aoTrocarExec==='function'){toast('Movendo balancetes e arquivos…');try{await aoTrocarExec(c.cod,ex)}catch(e){toast('Não consegui mover os arquivos: '+e.message)}}
+      save(); render(); return toast('Cliente '+c.cod+' agora é de '+execNome(ex))}
     c[k]=k==='sistema'?inp.value:k==='off'?inp.value.split(/[,\s]+/).map(s=>s.trim().toUpperCase()).filter(Boolean):k==='obs'?inp.value:+inp.value; save(); toast('Cliente atualizado')});
   $('#imp').onchange=async e=>{const f=e.target.files[0]; if(!f) return; try{const n=importarCarteira(await f.arrayBuffer()); save(); render(); toast(n+' clientes novos importados')}catch(err){toast(err.message)}};
   let tq; $('#cli-q').oninput=e=>{clearTimeout(tq);tq=setTimeout(()=>{cliBusca=e.target.value;render();const el=$('#cli-q');el.focus();el.setSelectionRange(el.value.length,el.value.length)},250)};
@@ -882,6 +904,7 @@ function clientesView(){
     const cod=$('#ce-cod').value.trim(), nome=$('#ce-nome').value.trim();
     if(!/^\d+$/.test(cod)) return toast('O código precisa ter só números');
     if(!nome) return toast('Preencha a razão social');
+    if(!$('#ce-grupo').value.trim()||!$('#ce-trib').value.trim()) return toast('Grupo e Tributação são obrigatórios');
     if(novo&&S.clientes.some(x=>x.cod===cod)) return toast('Já existe um cliente com o código '+cod);
     let ex=$('#ce-ex').value;
     if(ex==='__novo'){const n=$('#ce-exn').value.trim(); if(!n) return toast('Escreva o nome do novo executivo');
