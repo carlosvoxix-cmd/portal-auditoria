@@ -241,7 +241,7 @@ function lerMeta(texto,nomeArq,linhas){
   const le=(linhas||[]).slice(0,15).find(l=>l.t.some(t=>/^(Empresa:|ENTIDADE:)/i.test(t.s)));
   if(le){const i=le.t.findIndex(t=>/^(Empresa:|ENTIDADE:)/i.test(t.s)); const lab=le.t[i]; m.empresa=le.t.filter(t=>t!==lab&&t.x>lab.x&&t.x<lab.x+350&&!/^(Folha|LIVRO)/i.test(t.s)).map(t=>t.s.replace(/^(Empresa:|ENTIDADE:)\s*/i,'')).join(' ').trim()||undefined;}
   const cn=texto.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/); if(cn) m.cnpj=cn[0];
-  const per=texto.match(/(\d{2})\/(\d{2})\/(\d{4})\s*(?:-|a)\s*(\d{2})\/(\d{2})\/(\d{4})/); if(per) m.mes=per[6]+'-'+per[5];
+  const per=texto.match(/(\d{2})\/(\d{2})\/(\d{4})\s*(?:-|a|at[ée])\s*(\d{2})\/(\d{2})\/(\d{4})/i); if(per) m.mes=per[6]+'-'+per[5];
   const cod=(nomeArq||'').match(/^(\d{3,6})[_\- ]/); if(cod) m.cod=cod[1];
   if(!m.mes){const mm=(nomeArq||'').match(/(\d{2})[_\-]?(\d{4})/); if(mm) m.mes=mm[2]+'-'+mm[1];}
   return m;
@@ -260,6 +260,7 @@ function interpretarBalancete({linhas,texto},nomeArq,modoConta){
   if(cols.length>5) cols=cols.slice(-5); if(cols.length<4) throw new Error('Não encontrei as 4 colunas de saldo anterior, débito, crédito e saldo atual.');
   const xNum0=cols[0]-90;
   const rows=[]; let pend=null; const heads=[];
+  const hRed=L.slice(0,60).flatMap(l=>l.t).find(t=>/^RED(UZ|\.|UZIDO)/i.test(t.s)); const redR=hRed?[hRed.x-30,hRed.x1+10]:null;
   const isCode=s=>/^\d[\d.]*\d$|^\d$/.test(s);
   for(const l of L){
     const tk=l.t; const nums={}; let neg=false, temNum=false; const txt=[]; const codes=[];
@@ -270,7 +271,7 @@ function interpretarBalancete({linhas,texto},nomeArq,modoConta){
         if(bd<=14){let v=numBR(t.s); if(neg){v=-v;neg=false} nums[nomes[best]]=v; temNum=true}
         continue;
       }
-      if(!txt.length&&isCode(t.s)&&t.x<xNum0){codes.push(t.s);continue}
+      if(!txt.length&&isCode(t.s)&&t.x<xNum0){codes.push(redR&&t.x1>=redR[0]&&t.x<=redR[1]?'\u0001'+t.s:t.s);continue}
       if(t.x<xNum0||!temNum) txt.push(t.s);
     }
     const desc=txt.join(' ').replace(/\s+/g,' ').trim();
@@ -283,9 +284,10 @@ function interpretarBalancete({linhas,texto},nomeArq,modoConta){
     if(codes.length&&temNum) rows.push(mk(codes,desc,nums));
   }
   function mk(codes,desc,n){
+    let red=codes.filter(c=>c[0]==='\u0001').map(c=>c.slice(1)); codes=codes.filter(c=>c[0]!=='\u0001'); if(!codes.length){codes=red;red=[]}
     const comPonto=codes.filter(c=>c.includes('.')).sort((a,b)=>b.length-a.length)[0];
     const conta=modoConta==='primeiro'?codes[0]:modoConta==='ultimo'?codes[codes.length-1]:modoConta==='class'?(comPonto||codes[codes.length-1]):(comPonto||codes[codes.length-1]);
-    const r={conta,reduz:codes.filter(c=>c!==conta).join(' '),desc,si:n.si||0,d:Math.abs(n.d||0),c:Math.abs(n.c||0),sf:n.sf||0,ctx:heads.slice(-1).join(' | ')};
+    const r={conta,reduz:[...red,...codes.filter(c=>c!==conta)].join(' '),desc,si:n.si||0,d:Math.abs(n.d||0),c:Math.abs(n.c||0),sf:n.sf||0,ctx:heads.slice(-1).join(' | ')};
     return r;
   }
   // só contas analíticas
@@ -308,10 +310,14 @@ const TC=r=>' '+norm(r.desc+' | '+(r.ctx||''))+' '; // descrição + grupos acim
 function natureza(r){ // D = devedora, C = credora
   const g=dig(r), t=T(r);
   if(g==='1') return (/\(-\)|deprec|amortiz|exaust|pcld|devedores duvid|cred\. liquid|desagio/.test(t)||/\(-\)|deprec|amortiz|exaust|pcld|devedores duvid/.test(' '+norm((r.ctx||'').split('|')[0])))?'C':'D';
-  if(g==='2'){ if(/\(-\)|prejuizo|distribuicao de lucro|lucros distribuidos|antecipacao de lucro|acoes em tesouraria|a integralizar/.test(t)) return 'D'; return 'C'; }
-  if(/recupera/.test(t)) return 'C';
-  if(/\(-\)|custo|despesa|comiss|frete|devoluc|cancelamento/.test(t)) return 'D';
-  if(/receita|rendimento|dividendo|obtido|juros (ativos|recebidos)|variacao cambial ativa/.test(t)||/^ (vendas?|faturamento|prestacao de servic)/.test(t)) return 'C';
+  if(g==='2'){ if(/\(-\)|prejuizo|distribuicao de lucro|lucros? distribuidos?|antecipacao de lucro|acoes em tesouraria|a integralizar/.test(t)) return 'D'; return 'C'; }
+  // resultado: decide pela descrição; se ela não disser nada, pela conta-mãe mais próxima
+  const textos=[t,...String(r.ctx||'').split('|').map(x=>' '+norm(x)+' ').filter(x=>x.trim())];
+  for(const x of textos){
+    if(/deducoes das compras|devoluc(ao|oes) de compras|s\/ ?entradas|recupera|bonifica|atualizacao selic|descontos? obtidos?/.test(x)) return 'C';
+    if(/\(-\)|dedu|anulad|cancelad|s\/ ?saidas|custo|despesa|comiss|frete|devoluc|cancelamento|^ (pis|cofins|icms|iss|ipi|irpj|csll)\b/.test(x)) return 'D';
+    if(/receita|rendimento|dividendo|obtido|juros (ativos|recebidos)|variacao cambial ativa|^ (vendas?|faturamento|prestacao de servic)|outras receitas/.test(x)) return 'C';
+  }
   return 'D';
 }
 function grupo(r){
