@@ -318,7 +318,7 @@ function natureza(r){ // D = devedora, C = credora
     if(/\(-\)|dedu|anulad|cancelad|s\/ ?saidas|custo|despesa|comiss|frete|devoluc|cancelamento|^ (pis|cofins|icms|iss|ipi|irpj|csll)\b/.test(x)) return 'D';
     if(/receita|rendimento|dividendo|obtido|juros (ativos|recebidos)|variacao cambial ativa|^ (vendas?|faturamento|prestacao de servic)|outras receitas/.test(x)) return 'C';
   }
-  return 'D';
+  return g==='3'&&!/^313/.test(r.conta.replace(/\D/g,''))?'C':'D';
 }
 function grupo(r){
   const g=dig(r), t=T(r), tc=TC(r);
