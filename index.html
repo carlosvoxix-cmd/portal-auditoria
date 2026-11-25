@@ -1,0 +1,1078 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<title>Auditoria de Balancetes Confirp</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<style>
+/* Layout: barra superior com marca, abas de trabalho, conteúdo em tabelas densas tipo papel de trabalho de auditoria */
+:root{
+  --bg:#f4f6fa; --surface:#ffffff; --fg:#17212e; --muted:#5b6778; --line:#dbe1e9;
+  --brand:#0162e7; --brand-fg:#ffffff; --accent:#0162e7; --accent-soft:#e8f0fe; --head:#ffffff; --head-fg:#111111;
+  --ok:#1d7a4f; --ok-soft:#e3f3ea; --warn:#a8650b; --warn-soft:#fbf0dc; --bad:#b3261e; --bad-soft:#fbe6e4; --info-soft:#e7eef7;
+  --f-display:"Sora",system-ui,sans-serif; --f-body:"IBM Plex Sans",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141b; --surface:#171e28; --fg:#e6ebf2; --muted:#9aa6b6; --line:#2a3443;
+  --brand:#2f7bf0; --brand-fg:#ffffff; --accent:#5b9bf8; --accent-soft:#13233b; --head:#ffffff; --head-fg:#111111;
+  --ok:#5fcf98; --ok-soft:#163327; --warn:#f0b75e; --warn-soft:#3a2c12; --bad:#f08a82; --bad-soft:#3d1c1a; --info-soft:#1b2a3d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --surface:#171e28; --fg:#e6ebf2; --muted:#9aa6b6; --line:#2a3443;
+  --brand:#2f7bf0; --brand-fg:#ffffff; --accent:#5b9bf8; --accent-soft:#13233b; --head:#ffffff; --head-fg:#111111;
+  --ok:#5fcf98; --ok-soft:#163327; --warn:#f0b75e; --warn-soft:#3a2c12; --bad:#f08a82; --bad-soft:#3d1c1a; --info-soft:#1b2a3d; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--head)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--head);color:var(--head-fg);border-bottom:3px solid var(--brand)}
+.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:12px}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-weight:700;font-size:18px;letter-spacing:.2px}
+.logo .mark{width:30px;height:30px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:#fff;font-size:16px}
+.logo small{display:block;font-family:var(--f-body);font-weight:400;font-size:12px;opacity:.8}
+.top .spacer{flex:1}
+.who{display:flex;gap:8px;align-items:center;font-size:13px}
+.who select{background:#fff;color:#111;border:1px solid #c9d3e3;border-radius:6px;padding:5px 8px;font:inherit;color-scheme:light}
+.logo img{height:34px;width:auto;display:block}
+.logo .sub{font-family:var(--f-body);font-weight:500;font-size:13px;color:#4a5566;border-left:1px solid #d5dbe5;padding-left:12px}
+.who select option{color:#17212e}
+nav.tabs{background:var(--surface);border-bottom:1px solid var(--line)}
+nav.tabs .wrap{display:flex;gap:4px;overflow-x:auto}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:12px 14px;font:500 14px var(--f-body);color:var(--muted);cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--fg);border-color:var(--accent)}
+main .wrap{padding-block:22px 60px;display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--f-display);font-size:22px;margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-size:16px;margin:0 0 10px;text-wrap:balance}
+p.lead{margin:4px 0 0;color:var(--muted);max-width:70ch}
+.demo{background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:10px 14px;font-size:13px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi .n{font-family:var(--f-display);font-size:26px;font-variant-numeric:tabular-nums}
+.kpi .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.grid2>*{min-width:0}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--info-soft);padding:8px 10px;white-space:nowrap}
+td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.mono{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.p-Aberta{background:var(--bad-soft);color:var(--bad)}
+.p-Justificada{background:var(--info-soft);color:var(--brand)}
+.p-Aprovada{background:var(--ok-soft);color:var(--ok)}
+.p-AprovadaPend{background:var(--warn-soft);color:var(--warn)}
+.p-Ressalvada{background:var(--accent-soft);color:var(--brand)}
+.card-p.s-Ressalvada{border-left-color:var(--brand)}
+.p-Materialidade{background:var(--ok-soft,#e6f4ea);color:var(--ok)}
+.card-p.s-Materialidade{border-left-color:var(--ok)}
+.tic{width:26px;height:26px;border-radius:6px;border:1.5px solid var(--line);background:var(--surface);color:transparent;font-weight:700;cursor:pointer;line-height:1}
+.tic:hover{border-color:var(--ok);color:var(--ok)}
+.tic.on{background:var(--ok);border-color:var(--ok);color:#fff}
+tr.visto td:not(:first-child){opacity:.6}
+.rec-aviso{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:8px 10px;font-weight:600}
+.rep-aviso{background:var(--bad-soft,#fde8e8);color:var(--bad,#b3261e);border-radius:6px;padding:8px 10px;font-weight:600}
+.resbox{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.btn.res{border-color:var(--brand);color:var(--brand)}
+.p-Reprovada{background:var(--bad);color:#fff}
+.rec{background:var(--accent);color:#fff}
+.sev{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.sev-Alta{background:var(--bad)}.sev-Média{background:var(--warn)}.sev-Baixa{background:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+input,select,textarea{font:14px var(--f-body);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px}
+textarea{width:100%;min-height:58px;resize:vertical}
+button.btn{font:500 13px var(--f-body);border-radius:6px;padding:8px 14px;cursor:pointer;border:1px solid var(--brand);background:var(--brand);color:var(--brand-fg)}
+button.btn.ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+button.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+button.btn.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+button.btn.warn{background:var(--warn);border-color:var(--warn);color:#fff}
+button.btn.sm{padding:4px 9px;font-size:12px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.muted{color:var(--muted)}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;color:var(--muted)}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.card-p{border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:8px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.card-p.s-Justificada{border-left-color:var(--brand)}.card-p.s-Aprovada{border-left-color:var(--ok)}.card-p.s-AprovadaPend{border-left-color:var(--warn)}
+.card-p .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.card-p .hd b{font-size:14px}
+.hist{font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px}
+.toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:8px;font-size:13px;z-index:20}
+.list{display:flex;flex-direction:column;gap:10px}
+.partic{background:var(--warn-soft);border-radius:6px;padding:8px 10px;font-size:13px}
+.partic-form{display:flex;flex-direction:column;gap:8px;border-top:1px dashed var(--line);padding-top:8px}
+.opts{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.opts label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.p-Desconsiderada{background:var(--info-soft);color:var(--muted)}
+.card-p.s-Desconsiderada{border-left-color:var(--line);opacity:.85}
+.info{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--brand);color:#fff;font:700 10px/1 var(--f-body);cursor:help;vertical-align:middle;margin-left:3px;text-transform:none;letter-spacing:0}
+.tip{position:fixed;z-index:50;background:var(--fg);color:var(--bg);font:400 12.5px/1.45 var(--f-body);padding:8px 10px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.2);pointer-events:none;text-transform:none;letter-spacing:0}
+.pct{font-weight:600;padding:2px 8px;border-radius:99px}
+.pct-ok{color:#fff;background:var(--brand)} .pct-bad{color:#fff;background:var(--bad)}
+.pdfbtn{font:600 11px var(--f-body);color:var(--brand);background:var(--accent-soft);border:1px solid var(--brand);border-radius:5px;padding:1px 6px;cursor:pointer;margin-left:4px;vertical-align:middle}
+.pdfadd{color:var(--muted);border-style:dashed;background:transparent}
+.pdfbtn:hover{background:var(--brand);color:#fff}
+.pdfv{position:fixed;inset:0;z-index:40;background:rgba(10,20,35,.55);display:flex;padding:max(12px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))}
+[hidden]{display:none!important}
+.pdfv-box{background:var(--surface);border-radius:10px;flex:1;display:flex;flex-direction:column;min-width:0;max-width:1180px;margin:0 auto;overflow:hidden}
+.pdfv-h{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pdfv-h .spacer{flex:1}
+.pdfv-p{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;align-items:center;gap:12px;background:var(--bg)}
+.pdfv-p canvas{background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:100%}
+.nova{border-color:var(--brand)}
+.contas{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:6px;background:var(--surface)}
+.conta-op{display:grid;grid-template-columns:150px 1fr auto;gap:10px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:6px 10px;font:13px var(--f-body);color:var(--fg);cursor:pointer}
+.conta-op:hover{background:var(--accent-soft)} .conta-op.sel{background:var(--brand);color:#fff}
+@media (max-width:520px){.conta-op{grid-template-columns:1fr auto}.conta-op .mono:first-child{grid-column:1/-1}} .chk{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
+button.btn:disabled{opacity:.45;cursor:not-allowed}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
+button.kpi{font:inherit;color:inherit;text-align:left;cursor:pointer}
+.kpi.click:hover,.kpi.click:focus-visible{border-color:var(--brand);box-shadow:0 2px 10px rgba(1,98,231,.12)}
+.kpi .go{font-size:12px;color:var(--brand);margin-top:4px}
+tr.click{cursor:pointer} tr.click:hover>td{background:var(--accent-soft)} tr.open>td{background:var(--accent-soft);font-weight:500}
+.car{display:inline-block;width:12px;color:var(--brand)}
+tr.sub>td{padding:0 0 0 22px;background:var(--bg)}
+.comp{padding:10px 10px 12px 0;display:flex;flex-direction:column;gap:8px}
+.comp-h{font-size:13px}
+.chip{display:inline-flex;align-items:center;font-family:var(--f-mono);font-size:11.5px;border:1px solid var(--line);border-radius:99px;padding:1px 7px;margin:1px 0}
+.barw{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.bar{height:8px;border-radius:4px;background:var(--brand);opacity:.75;max-width:calc(100% - 30px)}
+td a{color:var(--brand)}
+.linkbox{font-family:var(--f-mono);font-size:12px;background:var(--info-soft);padding:6px 8px;border-radius:6px;word-break:break-all}
+@media (prefers-reduced-motion:no-preference){.card-p{transition:border-color .2s}}
+.sync{font-size:12px;color:var(--muted);margin-right:10px}.sync.err{color:var(--bad);font-weight:600}
+.login{max-width:380px;margin:40px auto;display:flex;flex-direction:column;gap:12px}
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="logo"><img src="data:image/png;base64,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" alt="Confirp"><span class="sub">Auditoria de balancetes</span></div>
+  <div class="spacer"></div>
+  <span class="sync" id="sync" aria-live="polite"></span><button class="btn sm ghost" id="sair" hidden>Sair</button>
+  <div class="who"><label for="perfil">Ver como</label>
+    <select id="perfil"></select></div>
+</div></header>
+<nav class="tabs" aria-label="Seções"><div class="wrap" id="tabs"></div></nav>
+<main><div class="wrap" id="view"></div></main>
+<div class="toast" id="toast" hidden></div>
+<div class="pdfv" id="pdfv" hidden role="dialog" aria-modal="true" aria-labelledby="pdfv-t"><div class="pdfv-box">
+ <div class="pdfv-h"><b id="pdfv-t"></b><span class="spacer"></span><button class="btn sm" id="pdfv-d" hidden>Baixar</button><label class="btn sm ghost" id="pdfv-r" title="Substituir pelo PDF correto deste cliente e mês">Trocar PDF<input type="file" accept=".pdf" hidden id="pdfv-ri"></label><button class="btn sm ghost" id="pdfv-x" onclick="document.getElementById('pdfv').hidden=true">Fechar</button></div>
+ <div class="pdfv-p" id="pdfv-p"></div></div></div>
+
+<script type="application/json" id="dados-iniciais">{}</script>
+<script>
+// ================== Dados e estado ==================
+const fmt=v=>(v==null||isNaN(v))?'—':v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const dc=v=>v==null?'—':fmt(Math.abs(v))+(v>=0?' D':' C');
+const uid=()=>Math.random().toString(36).slice(2,10);
+const KEY='confirp-auditoria-v4';
+
+const PREMISSAS=[
+ {id:'P01',nome:'Conta com saldo invertido',sev:'Alta'},
+ {id:'P02',nome:'Adiantamento de clientes sem baixa',sev:'Média'},
+ {id:'P03',nome:'Adiantamento a fornecedores sem baixa',sev:'Média'},
+ {id:'P04',nome:'Imposto provisionado sem baixa',sev:'Alta'},
+ {id:'P05',nome:'Prazo médio de pagamento acima do limite',sev:'Média'},
+ {id:'P06',nome:'Prazo médio de recebimento acima do limite',sev:'Média'},
+ {id:'P07',nome:'Mútuo sem provisão de IR',sev:'Alta'},
+ {id:'P08',nome:'Depreciação maior que o ativo',sev:'Alta'},
+ {id:'P09',nome:'Impostos a recuperar sem tratativa',sev:'Média'},
+ {id:'P10',nome:'Encargos de férias/13º desproporcionais',sev:'Média'},
+ {id:'S01',nome:'Balancete não fecha',sev:'Alta'},
+ {id:'S02',nome:'Saldo inicial diferente do final anterior',sev:'Alta'},
+ {id:'S03',nome:'Conta transitória com saldo',sev:'Média'},
+ {id:'S07',nome:'Folha/pró-labore sem baixa',sev:'Média'},
+ {id:'S15',nome:'Saldo sem movimentação (clientes/fornecedores)',sev:'Baixa'},
+ {id:'M01',nome:'Apontamento manual do auditor',sev:'Alta'},
+];
+const PM=Object.fromEntries(PREMISSAS.map(p=>[p.id,p]));
+
+function seed(){
+  try{return JSON.parse(document.getElementById('dados-iniciais').textContent)}catch(e){}
+  return {execs:[],clientes:[],balancetes:{},pend:[],treino:[]};
+}
+function bal(rows){return rows.map(([conta,desc,si,d,c])=>({conta,desc,si,d,c,sf:+(si+d-c).toFixed(2)}));}
+
+
+// ===== Leitura de balancete em PDF (Domínio, SAP B1 relatório e SAP B1 gerencial) =====
+const RX_NUM=/^\(?-?[\d.]*\d,\d{2}\)?[DC]?$/;
+function numBR(s){
+  let t=s.trim(), sg=1;
+  if(/C$/.test(t)){sg=-1;t=t.slice(0,-1)} else if(/D$/.test(t)) t=t.slice(0,-1);
+  if(/^\(.*\)$/.test(t)){sg=-sg;t=t.slice(1,-1)}
+  if(t.startsWith('-')){sg=-sg;t=t.slice(1)}
+  return sg*parseFloat(t.replace(/\./g,'').replace(',','.'));
+}
+async function pdfParaLinhas(buf){
+  const doc=await pdfjsLib.getDocument({data:buf}).promise; const linhas=[]; let texto='';
+  for(let i=1;i<=doc.numPages;i++){
+    const pg=await doc.getPage(i); const tc=await pg.getTextContent(); const by=new Map();
+    for(const it of tc.items){
+      const s=it.str.replace(/\s+$/,''); if(!s.trim()) continue;
+      const x=it.transform[4], y=Math.round(it.transform[5]*2)/2, w=it.width;
+      // separa "- 1.234,56" e itens com vários números
+      const parts=s.trim().split(/\s{2,}|(?<=^-)\s+(?=\d)/); let off=0; const tot=s.length||1;
+      for(const p of parts){const idx=s.indexOf(p,off); off=idx+p.length;
+        const tk={s:p,x:x+w*idx/tot,x1:x+w*(idx+p.length)/tot,y};
+        (by.get(y)||by.set(y,[]).get(y)).push(tk);}
+      texto+=s+'\n';
+    }
+    [...by.keys()].sort((a,b)=>b-a).forEach(y=>linhas.push({pg:i,y,t:by.get(y).sort((a,b)=>a.x-b.x)}));
+  }
+  return {linhas,texto};
+}
+function detectarFormato(texto){
+  if(/Cta\.cont/i.test(texto)) return 'SAP B1';
+  if(/filiais SAP|Extenso/i.test(texto)) return 'SAP B1 (gerencial)';
+  if(/Classifica/i.test(texto)&&/Descri..o da conta/i.test(texto)) return 'Domínio';
+  return 'Desconhecido';
+}
+function lerMeta(texto,nomeArq,linhas){
+  const m={};
+  const le=(linhas||[]).slice(0,15).find(l=>l.t.some(t=>/^(Empresa:|ENTIDADE:)/i.test(t.s)));
+  if(le){const i=le.t.findIndex(t=>/^(Empresa:|ENTIDADE:)/i.test(t.s)); const lab=le.t[i]; m.empresa=le.t.filter(t=>t!==lab&&t.x>lab.x&&t.x<lab.x+350&&!/^(Folha|LIVRO)/i.test(t.s)).map(t=>t.s.replace(/^(Empresa:|ENTIDADE:)\s*/i,'')).join(' ').trim()||undefined;}
+  const cn=texto.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/); if(cn) m.cnpj=cn[0];
+  const per=texto.match(/(\d{2})\/(\d{2})\/(\d{4})\s*(?:-|a)\s*(\d{2})\/(\d{2})\/(\d{4})/); if(per) m.mes=per[6]+'-'+per[5];
+  const cod=(nomeArq||'').match(/^(\d{3,6})[_\- ]/); if(cod) m.cod=cod[1];
+  if(!m.mes){const mm=(nomeArq||'').match(/(\d{2})[_\-]?(\d{4})/); if(mm) m.mes=mm[2]+'-'+mm[1];}
+  return m;
+}
+function interpretarBalancete({linhas,texto},nomeArq){
+  const formato=detectarFormato(texto), meta=lerMeta(texto,nomeArq,linhas);
+  // corta o resumo final (Domínio)
+  let fim=linhas.findIndex(l=>l.t.some(t=>/RESUMO DO BALANCETE/i.test(t.s))); if(fim<0) fim=linhas.length;
+  const L=linhas.slice(0,fim);
+  // colunas numéricas: agrupa bordas direitas dos números (alinhados à direita)
+  const xs=[]; L.forEach(l=>l.t.forEach(t=>{if(RX_NUM.test(t.s)) xs.push(t.x1)})); xs.sort((a,b)=>a-b);
+  const cl=[]; xs.forEach(x=>{const c=cl.at(-1); if(c&&x-c.max<8){c.max=x;c.n++;c.sum+=x} else cl.push({min:x,max:x,n:1,sum:x})});
+  const top=Math.max(...cl.map(c=>c.n)); let cols=cl.filter(c=>c.n>=Math.max(3,top*0.15)).map(c=>c.sum/c.n);
+  const nomes=cols.length>=5?['si','d','c','mes','sf']:['si','d','c','sf'];
+  if(cols.length>5) cols=cols.slice(-5); if(cols.length<4) throw new Error('Não encontrei as 4 colunas de saldo anterior, débito, crédito e saldo atual.');
+  const xNum0=cols[0]-90;
+  const rows=[]; let pend=null; const heads=[];
+  const isCode=s=>/^\d[\d.]*\d$|^\d$/.test(s);
+  for(const l of L){
+    const tk=l.t; const nums={}; let neg=false, temNum=false; const txt=[]; const codes=[];
+    for(const t of tk){
+      if(t.s==='-'&&t.x>xNum0){neg=true;continue}
+      if(RX_NUM.test(t.s)&&t.x1>xNum0){
+        let best=-1,bd=1e9; cols.forEach((c,i)=>{const d=Math.abs(c-t.x1); if(d<bd){bd=d;best=i}});
+        if(bd<=14){let v=numBR(t.s); if(neg){v=-v;neg=false} nums[nomes[best]]=v; temNum=true}
+        continue;
+      }
+      if(!txt.length&&isCode(t.s)&&t.x<xNum0){codes.push(t.s);continue}
+      if(t.x<xNum0||!temNum) txt.push(t.s);
+    }
+    const desc=txt.join(' ').replace(/\s+/g,' ').trim();
+    if(/^(Código|Extenso|Cta\.)/i.test(desc)||/Saldo Anterior|Sd\. Anterior/i.test(desc)) continue;
+    if(!codes.length&&desc&&desc!=='-'&&!/^(P[aá]gina|Folha|Emiss|Sistema licenciado)/i.test(desc)){heads.push(desc);if(heads.length>4)heads.shift()}
+    if(codes.length&&!temNum){pend={codes,desc,pg:l.pg};continue}
+    if(!codes.length&&temNum&&pend&&(!desc||desc==='-')){
+      rows.push(mk(pend.codes,pend.desc,nums)); pend=null; continue;}
+    pend=null;
+    if(codes.length&&temNum) rows.push(mk(codes,desc,nums));
+  }
+  function mk(codes,desc,n){
+    const conta=codes.length>1?codes[codes.length-1]:codes[0];
+    const r={conta,reduz:codes.length>1?codes[0]:'',desc,si:n.si||0,d:Math.abs(n.d||0),c:Math.abs(n.c||0),sf:n.sf||0,ctx:heads.slice(-1).join(' | ')};
+    return r;
+  }
+  // só contas analíticas
+  const codesAll=rows.map(r=>r.conta);
+  const anal=rows.filter(r=>!codesAll.some(c=>c!==r.conta&&c.startsWith(r.conta)&&(c.length>r.conta.length)));
+  const sint=rows.filter(r=>!anal.includes(r));
+  anal.forEach(r=>{const anc=sint.filter(x=>r.conta.startsWith(x.conta)).sort((a,b)=>b.conta.length-a.conta.length).slice(0,3).map(x=>x.desc);
+    if(anc.length) r.ctx=anc.join(' | '); if(!r.desc&&anc.length) r.desc=anc[0];});
+  anal.forEach(r=>{r.sf=+r.sf.toFixed(2);r.si=+r.si.toFixed(2)});
+  const totSf=anal.reduce((a,r)=>a+r.sf,0), totSi=anal.reduce((a,r)=>a+r.si,0);
+  const conf=anal.filter(r=>Math.abs(r.si+r.d-r.c-r.sf)>0.02);
+  return {formato,meta,rows:anal,sinteticas:rows.length-anal.length,checagem:{totSf:+totSf.toFixed(2),totSi:+totSi.toFixed(2),linhasQueNaoFecham:conf.length,exemplos:conf.slice(0,5)}};
+}
+
+// ================== Motor de premissas ==================
+function norm(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ')}
+const dig=r=>r.conta.replace(/\D/g,'')[0];
+const T=r=>' '+norm(r.desc)+' ';            // só a descrição
+const TC=r=>' '+norm(r.desc+' | '+(r.ctx||''))+' '; // descrição + grupos acima
+function natureza(r){ // D = devedora, C = credora
+  const g=dig(r), t=T(r);
+  if(g==='1') return (/\(-\)|deprec|amortiz|exaust|pcld|devedores duvid|cred\. liquid|desagio/.test(t)||/\(-\)|deprec|amortiz|exaust|pcld|devedores duvid/.test(' '+norm((r.ctx||'').split('|')[0])))?'C':'D';
+  if(g==='2'){ if(/\(-\)|prejuizo|distribuicao de lucro|lucros distribuidos|antecipacao de lucro|acoes em tesouraria|a integralizar/.test(t)) return 'D'; return 'C'; }
+  if(/recupera/.test(t)) return 'C';
+  if(/\(-\)|custo|despesa|comiss|frete|devoluc|cancelamento/.test(t)) return 'D';
+  if(/receita|rendimento|dividendo|obtido|juros (ativos|recebidos)|variacao cambial ativa/.test(t)||/^ (vendas?|faturamento|prestacao de servic)/.test(t)) return 'C';
+  return 'D';
+}
+function grupo(r){
+  const g=dig(r), t=T(r), tc=TC(r);
+  if(/transitori|a classificar|a identificar|a regularizar/.test(t)) return 'transit';
+  if(g==='1'&&/adiant.*fornec/.test(tc)) return 'adFor';
+  if(g==='2'&&/adiant.*client/.test(tc)) return 'adCli';
+  if(/mutuo/.test(t)) return /juros|\bir\b|irrf|iof/.test(t)?'irMutuo':'mutuo';
+  if(g==='1'&&/deprec|amortiz|exaust/.test(tc)) return 'deprec';
+  if(g==='1'&&/imobilizad|intangivel/.test(tc)) return 'imob';
+  if(g==='1'&&/recuperar|compensar/.test(tc)) return 'recup';
+  if(g==='2'&&/(inss|fgts|encargo|pis)[^|]*ferias/.test(t)) return 'encFer';
+  if(g==='2'&&/(inss|fgts|encargo|pis)[^|]*(13|decimo)/.test(t)) return 'enc13';
+  if(g==='2'&&/ferias/.test(t)) return 'provFer';
+  if(g==='2'&&/\b13|decimo/.test(t)) return 'prov13';
+  if(g==='2'&&/salario|ordenado|pro-labore|pro labore|rescis/.test(t)&&!/irrf|\bir\b|inss|fgts|contribuic|sindical|pensao/.test(t)) return 'folha';
+  if(g==='2'&&/parcelamento/.test(t)&&!/\(-\)/.test(t)) return 'parc';
+  if(g==='2'&&!/\(-\)/.test(t)&&/recolher|fiscais|tributar|sociais|impost|\b(pis|cofins|icms|iss|ipi|irpj|csll|irrf|irf|inss|fgts|simples|das)\b|retenc|retido/.test(tc)) return 'impRec';
+  if(g==='2'&&/fornecedor/.test(tc)) return 'forn';
+  if(g==='1'&&/client|duplicatas a receber|contas a receber/.test(tc)&&!/adiant/.test(t)) return 'cli';
+  if(g==='1'&&/estoque|mercadoria|produtos acabados|materia.prima/.test(tc)) return 'estoque';
+  if(g!=='1'&&g!=='2'&&!/\(-\)/.test(t)&&/receita bruta|vendas? de|venda de|faturamento|receita de servic|prestacao de servic/.test(tc)) return 'receita';
+  if(g!=='1'&&g!=='2'&&/compras|\bcmv\b|custo das mercad|custo dos produtos/.test(tc)) return 'compras';
+  return null;
+}
+function auditar(St,cod,mes){
+  const cli=St.clientes.find(c=>c.cod===cod); const rows=St.balancetes[cod][mes];
+  const meses=Object.keys(St.balancetes[cod]).sort(); const ant=St.balancetes[cod][meses[meses.indexOf(mes)-1]];
+  const antMap=ant?Object.fromEntries(ant.map(r=>[r.conta,r])):{};
+  const out=[]; const off=cli.off||[];
+  const parts=cli.partic||[];
+  const add=(premissa,r,descr)=>{if(off.includes(premissa))return; const conta=r?r.conta:'—';
+    const pt=parts.filter(x=>x.premissa===premissa&&(x.conta===conta||x.conta==='*')&&x.escopo!=='mes').at(-1);
+    out.push({premissa,conta,contaNome:r?r.desc:'Balancete inteiro',sAnt:r?r.si:null,sAt:r?r.sf:null,descr,partic:pt?{texto:pt.texto,pendente:pt.pendente,data:pt.data}:null})};
+  const G={}; rows.forEach(r=>{r.g=grupo(r);(G[r.g]=G[r.g]||[]).push(r)});
+  const sum=(g,f='sf')=>(G[g]||[]).reduce((a,r)=>a+r[f],0);
+  const z=v=>Math.abs(v)<0.005;
+  rows.forEach(r=>{
+    const n=natureza(r);
+    if(n==='D'&&r.sf<-1) add('P01',r,`Conta de natureza devedora com saldo credor de ${fmt(-r.sf)}`);
+    if(n==='C'&&r.sf>1) add('P01',r,`Conta de natureza credora com saldo devedor de ${fmt(r.sf)}`);
+    if(r.g==='adCli'&&r.si<-0.005&&r.d+0.005<-r.si) add('P02',r,r.d<0.005?'Adiantamento de cliente do mês anterior sem nenhuma baixa no mês':`Baixa parcial: saldo anterior ${fmt(-r.si)}, baixado ${fmt(r.d)}`);
+    if(r.g==='adFor'&&r.si>0.005&&r.c+0.005<r.si) add('P03',r,r.c<0.005?'Adiantamento a fornecedor do mês anterior sem nenhuma baixa no mês':`Baixa parcial: saldo anterior ${fmt(r.si)}, baixado ${fmt(r.c)}`);
+    if((r.g==='impRec'&&r.si<-0.005&&r.d+0.005<-r.si)||(r.g==='parc'&&r.si<-0.005&&r.d<0.005)) add('P04',r,r.g==='parc'?`Parcelamento sem pagamento no mês (saldo ${fmt(-r.sf)})`:`Saldo do mês anterior (${fmt(-r.si)}) não foi baixado; pagamentos no mês ${fmt(r.d)}`);
+    if(r.g==='recup'&&r.sf>0.005&&r.c<0.005) add('P09',r,`Saldo de ${fmt(r.sf)} sem compensação no mês`);
+    if(r.g==='mutuo'&&!z(r.sf)&&!(G.irMutuo||[]).length) add('P07',r,`Mútuo de ${fmt(Math.abs(r.sf))} sem conta de juros ou IR provisionado`);
+    if(r.g==='folha'&&r.si<-0.005&&r.d+0.005<-r.si) add('S07',r,`Folha/pró-labore do mês anterior (${fmt(-r.si)}) sem baixa completa`);
+    if(r.g==='transit'&&!z(r.sf)) add('S03',r,`Conta transitória com saldo de ${dc(r.sf)}`);
+    if((r.g==='forn'||r.g==='cli')&&!z(r.sf)&&z(r.d)&&z(r.c)) add('S15',r,`Saldo de ${dc(r.sf)} sem movimentação no mês`);
+    const a=antMap[r.conta]; if(a&&Math.abs(a.sf-r.si)>0.01) add('S02',r,`Saldo inicial ${dc(r.si)} difere do final do mês anterior ${dc(a.sf)}`);
+  });
+  // prazos médios
+  const receita=(G.receita||[]).reduce((a,r)=>a+r.c-r.d,0), clis=sum('cli');
+  const compras=(G.compras||[]).reduce((a,r)=>a+r.d-r.c,0)||(G.estoque||[]).reduce((a,r)=>a+r.d,0), forn=-sum('forn');
+  if(receita>0&&clis>0){const pmr=clis/receita*30; if(pmr>(cli.pmr||45)) add('P06',(G.cli||[])[0],`PMR de ${pmr.toFixed(0)} dias (limite ${cli.pmr||45}): clientes ${fmt(clis)} / receita do mês ${fmt(receita)}`)}
+  if(compras>0&&forn>0){const pmp=forn/compras*30; if(pmp>(cli.pmp||60)) add('P05',(G.forn||[])[0],`PMP de ${pmp.toFixed(0)} dias (limite ${cli.pmp||60}): fornecedores ${fmt(forn)} / compras do mês ${fmt(compras)}`)}
+  // depreciação x ativo (item a item e total)
+  const key=r=>norm(r.desc).replace(/\(-\)|deprec[a-z.]*|amortiz[a-z.]*|acumulad[a-z]*|exaust[a-z]*|\bde\b|\bda\b|\bdo\b|-|\./g,' ').replace(/\s+/g,' ').trim();
+  const custo={}; (G.imob||[]).forEach(r=>{custo[key(r)]=(custo[key(r)]||0)+r.sf});
+  let algum=false;
+  (G.deprec||[]).forEach(r=>{const k=key(r); if(k&&custo[k]!=null&&-r.sf>custo[k]+0.01){algum=true;add('P08',r,`Depreciação acumulada ${fmt(-r.sf)} maior que o custo do bem ${fmt(custo[k])}`)}});
+  const imob=sum('imob'), dep=-sum('deprec'); if(!algum&&imob>0&&dep>imob+0.01) add('P08',(G.deprec||[])[0],`Depreciação acumulada total ${fmt(dep)} maior que o imobilizado ${fmt(imob)}`);
+  // encargos sobre férias e 13º
+  [['provFer','encFer','férias'],['prov13','enc13','13º salário']].forEach(([p,e,nm])=>{
+    const pv=-sum(p), en=-sum(e); if(pv>1000){const t=en/pv;
+      if(t<0.30||t>0.40) add('P10',(G[e]||G[p])[0],en<0.005?`Provisão de ${nm} de ${fmt(pv)} sem encargos (INSS/FGTS) provisionados`:`Encargos s/ ${nm} são ${(t*100).toFixed(1)}% da provisão (${fmt(en)} / ${fmt(pv)}); esperado entre 30% e 40%`)}});
+  // apontamentos manuais que valem para os próximos meses
+  (cli.manuais||[]).forEach(m=>{const r=rows.find(x=>x.conta===m.conta); if(r&&Math.abs(r.sf)>0.005) add('M01',r,m.texto+` (saldo ${dc(r.sf)})`)});
+  // fechamento
+  const tot=rows.reduce((a,r)=>a+r.sf,0), tsi=rows.reduce((a,r)=>a+r.si,0), tD=rows.reduce((a,r)=>a+r.d,0), tC=rows.reduce((a,r)=>a+r.c,0);
+  if(Math.abs(tot)>0.05) add('S01',null,`Saldo atual não fecha: diferença de ${fmt(Math.abs(tot))}`);
+  if(Math.abs(tsi)>0.05) add('S01',null,`Saldo anterior não fecha: diferença de ${fmt(Math.abs(tsi))} (possível lançamento retroativo em meses anteriores)`);
+  if(Math.abs(tD-tC)>0.05&&Math.abs(Math.abs(tD-tC)-Math.abs(tsi))>0.05) add('S01',null,`Débitos (${fmt(tD)}) diferentes dos créditos (${fmt(tC)})`);
+  return out;
+}
+function aplicar(St,cod,mes,achados){
+  const cli=St.clientes.find(c=>c.cod===cod);
+  St.pend=St.pend.filter(p=>!(p.cod===cod&&p.mes===mes&&p.status==='Aberta'&&!p.just));
+  achados.forEach(a=>{
+    const k=cod+'|'+a.premissa+'|'+a.conta+(a.conta==='—'?'|'+a.descr.slice(0,12):'');
+    if(St.pend.some(p=>p.key===k&&p.mes===mes)) return;
+    const ant=St.pend.filter(p=>p.key===k&&p.mes<mes).sort((x,y)=>x.mes<y.mes?-1:1);
+    St.pend.push({id:uid(),key:k,cod,mes,exec:cli.exec,...a,status:a.partic&&!a.partic.pendente?'Desconsiderada':'Aberta',just:'',parecer:'',
+      recorrente:ant.length>0,desde:ant.length?ant[0].desde||ant[0].mes:mes,
+      anterior:ant.length?{status:ant.at(-1).status,parecer:ant.at(-1).parecer,mes:ant.at(-1).mes}:null,hist:[{q:'Sistema',t:'apontou na auditoria'}]});
+  });
+}
+
+let S={execs:[],clientes:[],balancetes:{},pend:[],treino:[]};
+const save=()=>agendarSync();
+
+// ================== Interface ==================
+const $=s=>document.querySelector(s); const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mesTxt=m=>{const [y,mm]=m.split('-');return mm+'/'+y};
+const stTxt={Aberta:'Aberta',Justificada:'Justificada',Aprovada:'Aprovada',AprovadaPend:'Aprovada c/ pendência',Reprovada:'Reprovada',Ressalvada:'Aprovada por ressalva',Materialidade:'Aprovada por materialidade',Desconsiderada:'Não é pendência'};
+const ATIVA=p=>!['Aprovada','Desconsiderada'].includes(p.status);
+const execNome=id=>(S.execs.find(e=>e.id===id)||{}).nome||'—';
+let periodo='';
+const noPer=m=>{if(!periodo)return true; const [k,v]=periodo.split(':'); if(k==='M')return m===v; const [y,q]=v.split('-'); return m.slice(0,4)===y&&Math.ceil(+m.slice(5,7)/3)===+q};
+const limDe=cod=>{const ks=Object.keys(S.lim||{}).filter(k=>k.startsWith(cod+'|')&&noPer(k.split('|')[1])&&S.lim[k].status!=='Recusada').sort();return ks.length?{k:ks.at(-1),mes:ks.at(-1).split('|')[1],...S.lim[ks.at(-1)]}:null};
+const auditado=cod=>Object.keys(S.balancetes[cod]||{}).some(noPer);
+const situacao=cod=>auditado(cod)?'aud':limDe(cod)?'lim':'aberto';
+const ultMes=()=>{const ms=[].concat(...Object.values(S.balancetes).map(o=>Object.keys(o))).sort();return ms.at(-1)||new Date().toISOString().slice(0,7)};
+function selPeriodo(){
+  const ms=[...new Set([].concat(...Object.values(S.balancetes).map(o=>Object.keys(o))))].sort().reverse();
+  const ts=[...new Set(ms.map(m=>m.slice(0,4)+'-'+Math.ceil(+m.slice(5,7)/3)))];
+  return `<div class="field"><label for="f-per">Período</label><select id="f-per"><option value="">Todos os meses</option>
+   <optgroup label="Trimestre">${ts.map(t=>`<option value="T:${t}">${t.split('-')[1]}º trimestre/${t.split('-')[0]}</option>`).join('')}</optgroup>
+   <optgroup label="Mês">${ms.map(m=>`<option value="M:${m}">${mesTxt(m)}</option>`).join('')}</optgroup></select></div>`;
+}
+function bindPeriodo(){const el=$('#f-per'); if(!el)return; el.value=periodo; el.onchange=e=>{periodo=e.target.value;render()}}
+let perfil='admin', tab='painel', filtro={exec:'',status:'',cod:''}, abertoPart=null;
+const nomeCurto=s=>{const m=String(s||'').match(/\(\s*([^)]+?)\s*\)\s*$/);return m?m[1]:String(s||'')};
+function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>el.hidden=true,2600)}
+
+function renderPerfil(){
+  $('#perfil').innerHTML=`<option value="admin">Carlos (auditor)</option>`+S.execs.map(e=>`<option value="${e.id}">Link do executivo: ${esc(e.nome)}</option>`).join('');
+  $('#perfil').value=perfil;
+}
+$('#perfil').onchange=e=>{perfil=e.target.value;tab=perfil==='admin'?'painel':'meus';render()};
+
+function render(){
+  const tabs=perfil==='admin'?[['painel','Painel'],['upload','Subir balancetes'],['pend','Pendências'],['resumo','Resumo por executivo'],['clientes','Clientes e premissas'],['treino','Particularidades e treino'],['execs','Executivos e links']]:[['meus','Meus clientes'],['enviar','Subir balancetes'],['minhas','Minhas pendências']];
+  $('#tabs').innerHTML=tabs.map(([k,l])=>`<button role="tab" aria-selected="${k===tab}" data-t="${k}">${l}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
+  ({painel,upload,pend:pendView,resumo:resumoView,clientes:clientesView,treino:treinoView,execs:execsView,minhas,meus:meusView,enviar:upload}[tab])();
+}
+
+let abreEx=null, abrePrem=null;
+// ===== PDF do balancete =====
+let _as=null,_dl=null;
+const useCap=n=>(window.claude&&claude.use?claude.use(n):Promise.resolve(null)).catch(()=>null);
+const getAssets=()=>_as||(_as=useCap('assets')); const getDl=()=>_dl||(_dl=useCap('downloads'));
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('confirp-pdfs',1);r.onupgradeneeded=()=>r.result.createObjectStore('pdf');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function idbPut(k,blob){try{const db=await idb();await new Promise((res,rej)=>{const t=db.transaction('pdf','readwrite');t.objectStore('pdf').put(blob,k);t.oncomplete=res;t.onerror=()=>rej(t.error)});return true}catch(e){return false}}
+async function idbGet(k){try{const db=await idb();return await new Promise(res=>{const q=db.transaction('pdf').objectStore('pdf').get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null)})}catch(e){return null}}
+async function guardarPdf(cod,mes,file,mapa='pdf'){return guardarArqNuvem(cod,mes,file,mapa)}
+async function obterPdf(k,mapa='pdf'){return lerArqNuvem(k,mapa)}
+const temRes=(cod,mes)=>!!(S.ress||{})[cod+'|'+mes];
+const btnRes=(cod,mes,add=true)=>temRes(cod,mes)?`<button class="pdfbtn" data-res="${cod}|${mes}" title="Abrir a ressalva do cliente">Ressalva</button>`:add?`<label class="pdfbtn pdfadd" title="Anexar a ressalva do cliente deste mês">+ Ressalva<input type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml" hidden data-addres="${cod}|${mes}"></label>`:'';
+const btnPdf=(cod,mes)=>(S.pdf||{})[cod+'|'+mes]?`<button class="pdfbtn" data-pdf="${cod}|${mes}" title="Abrir o balancete usado na análise">PDF</button>`:`<label class="pdfbtn pdfadd" title="O PDF deste balancete não foi guardado. Clique para anexar.">+ PDF<input type="file" accept=".pdf" hidden data-addpdf="${cod}|${mes}"></label>`;
+document.addEventListener('click',e=>{if(e.target.closest('.pdfadd'))e.stopPropagation()},true);
+document.addEventListener('change',async e=>{const r=e.target.closest('[data-addres]'); if(!r||!r.files[0]) return; const [cod,mes]=r.dataset.addres.split('|'); const troca=temRes(cod,mes);
+  toast('Enviando a ressalva…'); await guardarPdf(cod,mes,r.files[0],'ress'); save(); render(); toast((troca?'Ressalva trocada: ':'Ressalva anexada: ')+cod+' de '+mesTxt(mes)); if(r.id==='pdfv-ri') abrirPdf(cod+'|'+mes,'ress')});
+document.addEventListener('change',async e=>{const i=e.target.closest('[data-addpdf]'); if(!i||!i.files[0]) return; const [cod,mes]=i.dataset.addpdf.split('|');
+  const troca=i.id==='pdfv-ri'; toast(troca?'Trocando o PDF…':'Anexando o PDF…'); await guardarPdf(cod,mes,i.files[0]); save(); render(); toast((troca?'PDF trocado no balancete ':'PDF anexado ao balancete ')+cod+' de '+mesTxt(mes)); if(troca) abrirPdf(cod+'|'+mes)});
+async function abrirPdf(k,mapa='pdf'){
+  const m=S[mapa][k], [cod,mes]=k.split('|'), c=S.clientes.find(c=>c.cod===cod)||{};
+  const box=$('#pdfv'); box.hidden=false; $('#pdfv-t').textContent=`${mapa==='ress'?'Ressalva · ':mapa==='limArq'?'Formalização da limitação de escopo · ':''}${cod} · ${c.nome||''} · ${mesTxt(mes)}`; const pg=$('#pdfv-p'); pg.innerHTML='<p class="muted">Abrindo o balancete…</p>';
+  $('#pdfv-d').hidden=false;
+  $('#pdfv-r').hidden=mapa==='limArq'; const ri=$('#pdfv-ri'); ri.value=''; delete ri.dataset.addpdf; delete ri.dataset.addres; ri.dataset[mapa==='ress'?'addres':'addpdf']=k; ri.accept=mapa==='ress'?'.pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml':'.pdf'; $('#pdfv-r').firstChild.textContent=mapa==='ress'?'Trocar ressalva':'Trocar PDF';
+  const data=await obterPdf(k,mapa);
+  if(!data){pg.innerHTML='<p class="muted">Não consegui abrir este arquivo aqui. Ele foi guardado em outro navegador ou computador. Suba o arquivo de novo para ele ficar disponível.</p>';return}
+  $('#pdfv-d').onclick=()=>baixarBytes(data,m.nome||`${cod}_${mes}.pdf`);
+  const ext=(m.nome||'').toLowerCase().split('.').pop();
+  if(['png','jpg','jpeg'].includes(ext)){const u=URL.createObjectURL(new Blob([data],{type:'image/'+(ext==='png'?'png':'jpeg')}));pg.innerHTML=`<img src="${u}" alt="Ressalva" style="max-width:100%">`;return}
+  if(ext!=='pdf'){pg.innerHTML=`<p class="muted">O arquivo ${esc(m.nome)} não abre aqui na tela. Use "Baixar" para abrir no seu computador.</p>`;return}
+  try{const doc=await pdfjsLib.getDocument({data:data.slice()}).promise; pg.innerHTML='';
+    const w=Math.min(pg.clientWidth-8,1100);
+    for(let i=1;i<=doc.numPages;i++){const page=await doc.getPage(i);const v0=page.getViewport({scale:1});const sc=w/v0.width;const vp=page.getViewport({scale:sc*(devicePixelRatio||1)});
+      const cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/(devicePixelRatio||1))+'px';pg.appendChild(cv);
+      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise; if($('#pdfv').hidden) break;}
+  }catch(e){pg.innerHTML='<p class="muted">Não consegui ler este PDF.</p>'}
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-pdf]'); if(b){e.preventDefault();e.stopPropagation();abrirPdf(b.dataset.pdf)}
+  const r=e.target.closest('[data-res]'); if(r){e.preventDefault();e.stopPropagation();abrirPdf(r.dataset.res,'ress')}},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#pdfv').hidden)$('#pdfv').hidden=true});
+const info=t=>`<span class="info" tabindex="0" role="img" aria-label="${esc(t)}" data-tip="${esc(t)}">!</span>`;
+const META=97;
+const PDESC={P01:'Conta com saldo contrário à sua natureza: ativo ou despesa com saldo credor, passivo, PL ou receita com saldo devedor. Contas redutoras (depreciação, (-), prejuízo) já são tratadas.',P02:'Adiantamento de clientes do mês anterior que não foi baixado (débitos do mês menores que o saldo anterior).',P03:'Adiantamento a fornecedores do mês anterior que não foi baixado (créditos do mês menores que o saldo anterior).',P04:'Imposto ou retenção a recolher do mês anterior sem pagamento no mês, ou parcelamento sem nenhuma parcela paga.',P05:'Prazo médio de pagamento = fornecedores ÷ compras do mês × 30 dias, acima do limite do cliente (padrão 60).',P06:'Prazo médio de recebimento = clientes ÷ receita bruta do mês × 30 dias, acima do limite do cliente (padrão 45).',P07:'Conta de mútuo com saldo e sem conta de juros ou IR provisionado.',P08:'Depreciação acumulada maior que o custo do bem (item a item ou no total do imobilizado).',P09:'Imposto a recuperar com saldo e sem nenhuma compensação no mês.',P10:'Encargos (INSS/FGTS) sobre provisão de férias ou 13º fora da faixa de 30% a 40% da provisão.',S01:'Saldo atual, saldo anterior ou débitos x créditos do balancete não fecham.',S02:'Saldo inicial do mês diferente do saldo final do balancete do mês anterior.',S03:'Conta transitória ou a classificar com saldo no fim do mês.',S07:'Salários ou pró-labore do mês anterior sem baixa completa.',S15:'Clientes ou fornecedores com saldo e sem nenhuma movimentação no mês.'};
+function irPend(f){filtro={exec:'',status:'',cod:'',prem:'',rec:false,...f};tab='pend';render();window.scrollTo(0,0)}
+function painel(){
+  const PP=S.pend.filter(p=>noPer(p.mes));
+  const ab=PP.filter(p=>p.status==='Aberta').length, ju=PP.filter(p=>p.status==='Justificada').length, rec=PP.filter(p=>p.recorrente&&ATIVA(p)).length, rep=PP.filter(p=>p.status==='Reprovada').length;
+  const porExec=S.execs.map(e=>{const ps=PP.filter(p=>p.exec===e.id&&p.status!=='Desconsiderada');return {e,ps,ab:ps.filter(p=>p.status==='Aberta'||p.status==='Reprovada').length,ju:ps.filter(p=>p.status==='Justificada').length,rec:ps.filter(p=>p.recorrente).length,ap:S.clientes.filter(c=>c.exec===e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length,cl:S.clientes.filter(c=>c.exec===e.id).length,au:S.clientes.filter(c=>c.exec===e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).length,li:S.clientes.filter(c=>c.exec===e.id&&situacao(c.cod)==='lim').length,eab:S.clientes.filter(c=>c.exec===e.id&&situacao(c.cod)==='aberto').length}});
+  const porPrem=PREMISSAS.map(p=>({p,ps:PP.filter(x=>x.premissa===p.id&&ATIVA(x))})).filter(x=>x.ps.length).sort((a,b)=>b.ps.length-a.ps.length);
+  const maxP=Math.max(1,...porPrem.map(x=>x.ps.length));
+  const compExec=x=>{
+    const cls=S.clientes.filter(c=>c.exec===x.e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).map(c=>{const ps=x.ps.filter(p=>p.cod===c.cod&&ATIVA(p));const ms=Object.keys(S.balancetes[c.cod]).filter(noPer).sort();return {c,ps,mes:ms.at(-1)}}).sort((a,b)=>(!!(S.visto||{})[a.c.cod+'|'+a.mes])-(!!(S.visto||{})[b.c.cod+'|'+b.mes])||b.ps.length-a.ps.length);
+    const sem=x.cl-x.au;
+    return `<tr class="sub"><td colspan="10"><div class="comp">
+      <div class="comp-h">${x.cl} clientes: ${x.au} auditados · ${x.li} limitação de escopo · ${x.eab} em aberto</div>
+      <div class="tbl"><table><thead><tr><th style="width:40px">Visto ${info('Só um lembrete seu de que já olhou este cliente. Não muda status nem aprovação.')}</th><th>Código</th><th>Cliente</th><th>Analista</th><th>Balancete</th><th class="num">Pendências</th><th>Pontos</th><th>Cliente ${info('Aprovado por ressalva (precisa da ressalva anexada) ou por materialidade: o cliente conta como aprovado. As pendências ficam registradas com esse motivo e, se a conta continuar no próximo balancete, volta como pendência recorrente mostrando como foi aprovada.')}</th></tr></thead><tbody>
+      ${cls.map(({c,ps,mes})=>`<tr class="click${(S.visto||{})[c.cod+'|'+mes]?' visto':''}" data-goc="${c.cod}" data-gox="${x.e.id}" tabindex="0"><td><button class="tic${(S.visto||{})[c.cod+'|'+mes]?' on':''}" data-tic="${c.cod}|${mes}" aria-pressed="${!!(S.visto||{})[c.cod+'|'+mes]}" title="${(S.visto||{})[c.cod+'|'+mes]?'Visto em '+S.visto[c.cod+'|'+mes]+'. Clique para desmarcar':'Marcar como visto'}">✓</button></td><td class="mono">${c.cod}</td><td>${esc(c.nome)}</td><td>${esc(nomeCurto(c.analista))}</td><td class="mono">${mes?mesTxt(mes):'—'} ${mes?btnPdf(c.cod,mes):''}${mes?'<br>'+btnRes(c.cod,mes):''}</td><td class="num">${ps.length||'<span class="pill p-Aprovada">Validado</span>'}</td>
+        <td>${[...new Set(ps.map(p=>p.premissa))].map(id=>`<span class="chip" title="${esc(PM[id].nome)}"><span class="sev sev-${PM[id].sev}"></span>${id}</span>`).join(' ')}</td>
+        <td>${(S.aprovRes||{})[c.cod+'|'+mes]?`<span class="pill p-${S.aprovRes[c.cod+'|'+mes].tipo==='mat'?'Materialidade':'Ressalvada'}">Aprovado por ${S.aprovRes[c.cod+'|'+mes].tipo==='mat'?'materialidade':'ressalva'}</span> <a href="#" data-desres="${c.cod}|${mes}">desfazer</a>`:ps.some(p=>!['Ressalvada','Materialidade','AprovadaPend'].includes(p.status))?`<div class="resbox"><button class="btn sm warn" data-aprres="${c.cod}|${mes}" data-tipo="res">Aprovado por ressalva</button><button class="btn sm ghost" data-aprres="${c.cod}|${mes}" data-tipo="mat">Aprovado por materialidade</button></div>`:''}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${limTabela(x.e.id,true)}
+      ${x.eab?`<div class="comp-h" style="margin-top:14px">Em aberto (${x.eab}) <span class="muted">sem balancete e sem limitação informada</span></div><div class="muted" style="font-size:13px">${S.clientes.filter(c=>c.exec===x.e.id&&situacao(c.cod)==='aberto').map(c=>c.cod+' · '+esc(c.nome)).join('<br>')}</div>`:''}
+      </div></td></tr>`;
+  };
+  const compPrem=x=>`<tr class="sub"><td colspan="2"><div class="comp"><div class="tbl"><table><thead><tr><th>Cliente</th><th>Conta</th><th>Apontamento</th></tr></thead><tbody>
+      ${x.ps.map(p=>{const c=S.clientes.find(c=>c.cod===p.cod)||{};return `<tr class="click" data-goc="${p.cod}" data-gop="${x.p.id}" tabindex="0"><td>${p.cod} · ${esc(c.nome)}</td><td><span class="mono">${esc(p.conta)}</span> ${esc(p.contaNome)}</td><td>${esc(p.descr)}</td></tr>`}).join('')}
+      </tbody></table></div></div></td></tr>`;
+  $('#view').innerHTML=`
+  <div><h1>Painel da auditoria</h1><p class="lead">Clique em um número, executivo ou premissa para abrir a composição. Clique em um cliente para ir direto às pendências dele.</p></div>
+  <div class="row">${selPeriodo()}</div>
+  <div class="kpis">
+   <button class="kpi click" data-kst="Aberta"><div class="l">Abertas ${info('Pendências apontadas que o executivo ainda não justificou.')}</div><div class="n">${ab}</div><div class="go">Ver pendências →</div></button>
+   <button class="kpi click" data-kst="Justificada"><div class="l">Aguardando sua análise ${info('Pendências justificadas pelo executivo, esperando você aprovar ou reprovar.')}</div><div class="n">${ju}</div><div class="go">Ver justificativas →</div></button>
+   <button class="kpi click" data-krec="1"><div class="l">Recorrentes ${info('Pendências que já tinham sido apontadas em meses anteriores e continuam em aberto.')}</div><div class="n">${rec}</div><div class="go">Ver recorrentes →</div></button>
+   <button class="kpi click" data-kst="Reprovada"><div class="l">Reprovadas ${info('Justificativas que você reprovou. Voltam para o executivo corrigir.')}</div><div class="n">${rep}</div><div class="go">Ver reprovadas →</div></button>
+  </div>
+  <div><h2>Por executivo</h2><div class="tbl"><table><thead><tr><th>Executivo ${info('Clique na linha para ver cada cliente auditado do executivo.')}</th><th class="num">Clientes ${info('Total de clientes da carteira do executivo.')}</th><th class="num">Auditados ${info('Clientes com balancete enviado e auditado no período escolhido.')}</th><th class="num">Limitação de escopo ${info('Clientes sem fechamento no mês, informados pelo executivo com a formalização anexada.')}</th><th class="num">Em aberto ${info('Clientes sem balancete e sem limitação de escopo informada. No fim, este número precisa ser zero.')}</th><th class="num">A resolver ${info('Pendências abertas ou reprovadas, que o executivo ainda precisa justificar ou corrigir.')}</th><th class="num">Para analisar ${info('Pendências que o executivo já justificou e esperam você aprovar ou reprovar.')}</th><th class="num">Recorrentes ${info('Pendências que já tinham sido apontadas em meses anteriores para a mesma conta.')}</th><th class="num">Aprovados ${info('Clientes auditados sem pendência aberta, justificada ou reprovada. Aprovado com pendência conta como aprovado.')}</th><th class="num">% Aprovados ${info('Aprovados ÷ total de clientes da carteira. Meta: '+META+'%. Abaixo da meta fica vermelho, igual ou acima fica azul.')}</th></tr></thead><tbody>
+    ${porExec.map(x=>`<tr class="click${abreEx===x.e.id?' open':''}" data-tex="${x.e.id}" tabindex="0"><td><span class="car">${abreEx===x.e.id?'▾':'▸'}</span> ${esc(x.e.nome)}</td><td class="num">${x.cl}</td><td class="num">${x.au}</td><td class="num">${x.li}</td><td class="num">${x.eab?`<span class="pct pct-bad">${x.eab}</span>`:'0'}</td>
+      <td class="num"><a href="#" data-gx="${x.e.id}" data-gs="Aberta">${x.ab}</a></td><td class="num"><a href="#" data-gx="${x.e.id}" data-gs="Justificada">${x.ju}</a></td><td class="num"><a href="#" data-gx="${x.e.id}" data-gr="1">${x.rec}</a></td><td class="num">${x.ap}</td><td class="num">${(()=>{const pc=x.cl?x.ap/x.cl*100:0;return `<span class="pct ${pc>=META?'pct-ok':'pct-bad'}">${pc.toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span>`})()}</td></tr>${abreEx===x.e.id?compExec(x):''}`).join('')}
+  </tbody></table></div></div>
+  <div><h2>Premissas mais apontadas</h2><div class="tbl"><table><thead><tr><th>Premissa ${info('Passe o mouse no ! de cada premissa para ver a regra. Clique na linha para ver os clientes e contas.')}</th><th class="num" style="width:40%">Pendências ${info('Pendências em aberto da premissa no período, sem contar as aprovadas e as marcadas como não pendência.')}</th></tr></thead><tbody>
+    ${porPrem.map(x=>`<tr class="click${abrePrem===x.p.id?' open':''}" data-tpr="${x.p.id}" tabindex="0"><td><span class="car">${abrePrem===x.p.id?'▾':'▸'}</span> <span class="sev sev-${x.p.sev}"></span>${x.p.id} · ${esc(x.p.nome)} ${info(PDESC[x.p.id]||'')}</td>
+      <td class="num"><div class="barw"><div class="bar" style="width:${x.ps.length/maxP*100}%"></div><span>${x.ps.length}</span></div></td></tr>${abrePrem===x.p.id?compPrem(x):''}`).join('')||'<tr><td colspan="2" class="muted">Nenhuma pendência.</td></tr>'}
+  </tbody></table></div></div>`;
+  bindPeriodo(); 
+  const act=(el,fn)=>{el.onclick=fn;el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();fn(e)}}};
+  document.querySelectorAll('[data-kst]').forEach(b=>b.onclick=()=>irPend({status:b.dataset.kst}));
+  document.querySelectorAll('[data-krec]').forEach(b=>b.onclick=()=>irPend({rec:true}));
+  document.querySelectorAll('[data-tex]').forEach(r=>act(r,e=>{if(e.target.closest('a'))return;abreEx=abreEx===r.dataset.tex?null:r.dataset.tex;render()}));
+  document.querySelectorAll('[data-tpr]').forEach(r=>act(r,()=>{abrePrem=abrePrem===r.dataset.tpr?null:r.dataset.tpr;render()}));
+  document.querySelectorAll('[data-gx]').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();irPend({exec:a.dataset.gx,status:a.dataset.gs||'',rec:!!a.dataset.gr})});
+  bindLim();
+  document.querySelectorAll('[data-tic]').forEach(b=>{b.onclick=e=>{e.stopPropagation();S.visto=S.visto||{};const k=b.dataset.tic;if(S.visto[k])delete S.visto[k];else S.visto[k]=new Date().toLocaleDateString('pt-BR');save();render()};b.onkeydown=e=>e.stopPropagation()});
+  document.querySelectorAll('[data-aprres]').forEach(b=>b.onclick=e=>{e.stopPropagation();const k=b.dataset.aprres,[cod,mes]=k.split('|');
+    const mat=b.dataset.tipo==='mat'; if(!mat&&!temRes(cod,mes)) return toast('Anexe a ressalva do cliente antes (botão + Ressalva na coluna Balancete)');
+    S.aprovRes=S.aprovRes||{}; S.aprovRes[k]={data:new Date().toISOString().slice(0,10),tipo:mat?'mat':'res'};
+    S.pend.filter(p=>p.cod===cod&&p.mes===mes&&ATIVA(p)&&!['AprovadaPend','Ressalvada','Materialidade'].includes(p.status)).forEach(p=>{p.stAntRes=p.status;p.status=mat?'Materialidade':'Ressalvada';p.cliAprov=true;p.hist.push({q:'Carlos',t:'aprovou o cliente por '+(mat?'materialidade':'ressalva')})});
+    save();render();toast('Cliente '+cod+' aprovado por '+(mat?'materialidade':'ressalva')+'. No próximo balancete, as contas que continuarem voltam como pendência recorrente.')});
+  document.querySelectorAll('[data-desres]').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();const k=a.dataset.desres,[cod,mes]=k.split('|');
+    delete S.aprovRes[k]; S.pend.filter(p=>p.cod===cod&&p.mes===mes&&p.cliAprov).forEach(p=>{p.status=p.stAntRes||'Aberta';delete p.stAntRes;delete p.cliAprov;p.hist.push({q:'Carlos',t:'desfez a aprovação do cliente'})});
+    save();render();toast('Aprovação com ressalva desfeita')});
+  document.querySelectorAll('[data-goc]').forEach(r=>act(r,e=>{e.stopPropagation();irPend({cod:r.dataset.goc,exec:r.dataset.gox||'',prem:r.dataset.gop||''})}));
+}
+
+let lote=[];
+function upload(){
+  $('#view').innerHTML=`
+  <div><h1>Subir balancetes</h1><p class="lead">Arraste vários arquivos de uma vez (PDF do Domínio ou do SAP B1, ou Excel). O portal lê o código do cliente pelo nome do arquivo (ex.: 6028_Balancete_09_2026.pdf) e a empresa e o mês pelo cabeçalho. Confira e ajuste antes de salvar.${perfil!=='admin'?' Os balancetes vão para o Carlos auditar e as pendências aparecem em "Minhas pendências".':''}</p></div>
+  <div class="panel">
+  ${perfil==='admin'?`<div class="row"><div class="field"><label for="u-ex">Executivo dos clientes novos</label><select id="u-ex">${S.execs.map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('')}</select></div></div>`:''}
+  <div class="drop" id="drop" style="margin-top:14px">Arraste os balancetes aqui ou <label style="color:var(--accent);cursor:pointer;text-decoration:underline">escolha os arquivos<input type="file" id="u-file" accept=".pdf,.xlsx,.xls,.csv" multiple hidden></label></div>
+  <div id="u-prev" style="margin-top:14px"></div></div>`;
+  const drop=$('#drop');
+  ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
+  drop.addEventListener('drop',e=>lerArquivos([...e.dataTransfer.files]));
+  $('#u-file').onchange=e=>lerArquivos([...e.target.files]);
+  if(lote.length) prevLote();
+}
+function num(v){
+  if(typeof v==='number') return v; if(v==null) return 0; let s=String(v).trim(); if(!s) return 0;
+  let sign=1; if(/c$/i.test(s)){sign=-1;s=s.slice(0,-1)} else if(/d$/i.test(s)){s=s.slice(0,-1)}
+  if(/^\(.*\)$/.test(s)){sign=-sign;s=s.slice(1,-1)}
+  s=s.replace(/[^\d,.\-]/g,''); if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  const n=parseFloat(s); return isNaN(n)?0:n*sign;
+}
+function lerExcel(buf,nome){
+  const wb=XLSX.read(buf,{type:'array'}); const aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});
+  const hi=aoa.findIndex(r=>r.some(c=>/conta|classif/i.test(c))&&r.some(c=>/saldo/i.test(c)));
+  if(hi<0) throw new Error('Não achei a linha de cabeçalho com "Conta" e "Saldo".');
+  const H=aoa[hi].map(h=>norm(String(h))); const find=re=>H.findIndex(h=>re.test(h));
+  const ix={conta:find(/classif|^conta$|codigo/),desc:find(/descri|nome/),si:find(/anterior|inicial/),d:find(/debito/),c:find(/credito/),sf:find(/atual|final/)};
+  if(ix.conta<0||ix.sf<0) throw new Error('Não achei as colunas de conta e saldo atual.');
+  const rows=aoa.slice(hi+1).filter(r=>String(r[ix.conta]).trim()).map(r=>({conta:String(r[ix.conta]).trim(),desc:String(ix.desc>=0?r[ix.desc]:'').trim(),si:num(r[ix.si]),d:Math.abs(num(r[ix.d])),c:Math.abs(num(r[ix.c])),sf:num(r[ix.sf])}));
+  const codes=rows.map(r=>r.conta); const anal=rows.filter(r=>!codes.some(c=>c!==r.conta&&c.startsWith(r.conta)));
+  const tot=anal.reduce((a,r)=>a+r.sf,0);
+  return {formato:'Excel',meta:lerMeta('',nome),rows:anal,checagem:{totSf:+tot.toFixed(2)}};
+}
+async function lerArquivos(files){
+  $('#u-prev').innerHTML='<p class="muted">Lendo arquivos…</p>';
+  for(const f of files){
+    const buf=await f.arrayBuffer(); let r;
+    try{ r=/\.pdf$/i.test(f.name)?interpretarBalancete(await pdfParaLinhas(buf),f.name):lerExcel(buf,f.name); }
+    catch(e){ r={erro:e.message}; }
+    const cli=r.meta&&S.clientes.find(c=>c.cod===r.meta.cod);
+    lote.push({arq:f.name,file:f,...r,cod:(r.meta||{}).cod||'',mes:(r.meta||{}).mes||'',nome:cli?cli.nome:((r.meta||{}).empresa||''),novo:!cli});
+  }
+  prevLote();
+}
+function sistemaDe(f){return f.startsWith('SAP')?'SAP B1':f}
+function prevLote(){
+  $('#u-prev').innerHTML=`<div class="tbl"><table><thead><tr><th><input type="checkbox" id="sel-all" aria-label="Selecionar todos" ${lote.length&&lote.every(x=>x.sel)?'checked':''}></th><th>Arquivo</th><th>Código</th><th>Empresa</th><th>Sistema</th><th>Mês</th><th class="num">Contas</th><th>Leitura</th><th></th></tr></thead><tbody>
+  ${lote.map((x,i)=>x.erro?`<tr><td><input type="checkbox" data-sel="${i}" aria-label="Selecionar ${esc(x.arq)}" ${x.sel?'checked':''}></td><td style="min-width:180px;word-break:break-all"><b>${esc(x.arq)}</b></td><td colspan="6" style="color:var(--bad)">${esc(x.erro)} Envie este arquivo para o Claude ajustar a leitura.</td><td><button class="btn sm ghost" data-rm="${i}">Remover</button></td></tr>`:
+   `<tr><td><input type="checkbox" data-sel="${i}" aria-label="Selecionar ${esc(x.arq)}" ${x.sel?'checked':''}></td><td style="min-width:180px;word-break:break-all">${esc(x.arq)}</td><td><input id="lc-${i}" value="${esc(x.cod)}" style="width:80px" data-i="${i}" data-k="cod"></td>
+   <td><input id="ln-${i}" value="${esc(x.nome)}" style="min-width:220px" data-i="${i}" data-k="nome">${x.novo?' <span class="pill p-Justificada">cliente novo</span>':''}${!x.novo&&S.balancetes[x.cod]&&(x.mes in S.balancetes[x.cod])?` <span class="pill p-AprovadaPend" title="Este mês já foi auditado. Subir de novo guarda o PDF e refaz a análise sem perder justificativas e particularidades.">já auditado${(S.pdf||{})[x.cod+'|'+x.mes]?'':' · sem PDF'}</span>`:''}</td>
+   <td>${esc(x.formato)}</td><td><input type="month" id="lm-${i}" value="${x.mes}" data-i="${i}" data-k="mes"></td><td class="num">${x.rows.length}</td>
+   <td>${Math.abs(x.checagem.totSf)<0.05?'<span class="pill p-Aprovada">Fecha</span>':`<span class="pill p-Aberta">Diferença ${fmt(x.checagem.totSf)}</span>`}</td>
+   <td><button class="btn sm ghost" data-rm="${i}">Remover</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="row" style="margin-top:12px"><button class="btn" id="u-go">Salvar e auditar ${lote.filter(x=>!x.erro).length} balancetes</button><button class="btn ghost" id="u-clr">Limpar lista</button></div>`;
+  $('#u-prev').insertAdjacentHTML('afterbegin',`<div class="row" style="margin-bottom:10px"><button class="btn sm ghost" id="sel-err">Selecionar os com erro (${lote.filter(x=>x.erro).length})</button><button class="btn sm bad" id="rm-sel" ${lote.some(x=>x.sel)?'':'disabled'}>Remover selecionados (${lote.filter(x=>x.sel).length})</button></div>`);
+  document.querySelectorAll('[data-sel]').forEach(c=>c.onchange=()=>{lote[c.dataset.sel].sel=c.checked;prevLote()});
+  $('#sel-all').onchange=e=>{lote.forEach(x=>x.sel=e.target.checked);prevLote()};
+  $('#sel-err').onclick=()=>{lote.forEach(x=>x.sel=!!x.erro);prevLote()};
+  $('#rm-sel').onclick=()=>{const n=lote.filter(x=>x.sel).length;lote=lote.filter(x=>!x.sel);prevLote();toast(n+' arquivos removidos')};
+  document.querySelectorAll('#u-prev input[data-k]').forEach(inp=>inp.onchange=()=>{const x=lote[inp.dataset.i];x[inp.dataset.k]=inp.value.trim();if(inp.dataset.k==='cod'){const c=S.clientes.find(c=>c.cod===x.cod);x.novo=!c;if(c)x.nome=c.nome;prevLote()}});
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{lote.splice(+b.dataset.rm,1);prevLote()});
+  $('#u-clr').onclick=()=>{lote=[];prevLote()};
+  $('#u-go').onclick=async()=>{
+    const ok=lote.filter(x=>!x.erro); if(ok.some(x=>!x.cod||!x.mes)) return toast('Preencha o código e o mês de todos os arquivos');
+    let n=0; const ex=perfil==='admin'?$('#u-ex').value:perfil;
+    if(perfil!=='admin'){const fora=ok.filter(x=>{const c=S.clientes.find(c=>c.cod===x.cod);return !c||c.exec!==perfil}); if(fora.length) return toast('Cliente fora da sua carteira: '+fora.map(x=>x.cod).join(', ')+'. Confira o código ou remova o arquivo.');}
+    $('#u-go').disabled=true; $('#u-go').textContent='Carregando meses anteriores…';
+    for(const x of ok){try{await garantirBal(x.cod)}catch(e){}}
+    ok.forEach(x=>{
+      let c=S.clientes.find(c=>c.cod===x.cod);
+      if(!c){c={cod:x.cod,nome:x.nome||('Cliente '+x.cod),grupo:'',hub:'',exec:ex,coord:'',sistema:sistemaDe(x.formato),pmp:60,pmr:45,obs:'',off:[]};S.clientes.push(c)}
+      if(!c.sistema) c.sistema=sistemaDe(x.formato);
+      S.balancetes[x.cod]=S.balancetes[x.cod]||{}; S.balancetes[x.cod][x.mes]=x.rows.map(({conta,desc,si,d,c,sf,ctx})=>({conta,desc,si,d,c,sf,ctx}));
+      const a=auditar(S,x.cod,x.mes); aplicar(S,x.cod,x.mes,a); n+=a.length;
+    });
+    $('#u-go').disabled=true; $('#u-go').textContent='Guardando os PDFs…';
+    await Promise.all(ok.map(x=>x.file?guardarPdf(x.cod,x.mes,x.file):null));
+    ok.forEach(x=>{if(perfil!=='admin'){S.enviados=S.enviados||{};S.enviados[x.cod+'|'+x.mes]={exec:perfil,data:new Date().toISOString().slice(0,10)}} if(S.lim&&S.lim[x.cod+'|'+x.mes]) delete S.lim[x.cod+'|'+x.mes]});
+    save(); lote=[]; toast(`${ok.length} balancetes ${perfil==='admin'?'auditados':'enviados'}, ${n} pendências`); resEx=''; tab=perfil==='admin'?'resumo':'meus'; render();
+  };
+}
+
+function cardPend(p,modo){
+  const cli=S.clientes.find(c=>c.cod===p.cod)||{}; const pr=PM[p.premissa]||{nome:p.premissa,sev:'Média'};
+  const antTxt=p.anterior?`No mês ${mesTxt(p.anterior.mes)}: ${stTxt[p.anterior.status]}${p.anterior.parecer?' · "'+esc(p.anterior.parecer)+'"':''}`:'';
+  return `<div class="card-p s-${p.status}" data-id="${p.id}">
+   <div class="hd"><span class="pill p-${p.status}">${stTxt[p.status]}</span>${p.recorrente?`<span class="pill rec">Recorrente desde ${mesTxt(p.desde)}</span>`:''}
+     <b><span class="sev sev-${pr.sev}"></span>${p.premissa} · ${esc(pr.nome)}</b></div>
+   <div class="muted" style="font-size:13px">${p.cod} · ${esc(cli.nome)} · ${cli.sistema} · Executivo ${esc(execNome(p.exec))} · Coord. ${esc(nomeCurto(cli.coord))} · Analista ${esc(nomeCurto(cli.analista))} · Balancete ${mesTxt(p.mes)} ${btnPdf(p.cod,p.mes)} ${btnRes(p.cod,p.mes,modo!=='exec')}</div>
+   <div><span class="mono" style="font-family:var(--f-mono);font-size:12.5px">${esc(p.conta)}</span> ${esc(p.contaNome)} · saldo anterior ${dc(p.sAnt)} · saldo atual ${dc(p.sAt)}</div>
+   <div>${esc(p.descr)}</div>
+   ${p.ress?`<div class="partic"><b>Coberto pela ressalva do cliente</b> ${btnRes(p.cod,p.mes,false)||'<span class="muted">(arquivo removido)</span>'}</div>`:''}
+   ${p.anterior?`<div class="rec-aviso">Pendência recorrente: no mês ${mesTxt(p.anterior.mes)} esta conta ficou como "${stTxt[p.anterior.status]||p.anterior.status}"${p.anterior.parecer?'. Parecer: "'+esc(p.anterior.parecer)+'"':''}.</div>`:antTxt?`<div class="hist">${antTxt}</div>`:''}
+   ${p.partic?`<div class="partic"><b>Particularidade do cliente</b> (${p.partic.pendente?'continua pendência':'não é pendência'}): ${esc(p.partic.texto)}</div>`:''}
+   ${modo!=='exec'?(abertoPart===p.id?`<div class="partic-form">
+      <label class="field" for="pt-${p.id}">Particularidade deste cliente</label>
+      <textarea id="pt-${p.id}" placeholder="Ex.: adiantamento de cliente baixa só na entrega da obra">${esc(p.partic&&p.partic.texto||'')}</textarea>
+      <fieldset class="opts"><legend class="muted">Considerar como pendência?</legend>
+       <label><input type="radio" name="po-${p.id}" value="sim"> Sim, continua pendência (só registra a observação)</label>
+       <label><input type="radio" name="po-${p.id}" value="cliente" checked> Não, neste cliente esta conta não é pendência (vale para os próximos meses)</label>
+       <label><input type="radio" name="po-${p.id}" value="mes"> Não, só neste mês</label>
+       <label><input type="radio" name="po-${p.id}" value="regra"> Não, a análise está errada para todos os clientes (vai para o treino)</label></fieldset>
+      <div class="row"><button class="btn sm" data-act="partic">Salvar particularidade</button><button class="btn sm ghost" data-act="partic-x">Cancelar</button></div></div>`
+     :`<div class="row"><button class="btn sm ghost" data-act="partic-open">✎ Escrever particularidade</button></div>`):''}
+   ${p.status==='Desconsiderada'?'':modo==='exec'?(['Aberta','Reprovada','AprovadaPend'].includes(p.status)||p.status==='Justificada'?`
+     ${p.parecer?`<div class="hist">Parecer do auditor: ${esc(p.parecer)}</div>`:''}
+     <label class="field" for="j-${p.id}">Justificativa ou correção feita</label><textarea id="j-${p.id}">${esc(p.just)}</textarea>
+     <div class="row"><button class="btn sm" data-act="just">Enviar justificativa</button><button class="btn sm ghost res" data-act="ress" title="Marca que este ponto está coberto pela ressalva do cliente e envia ao Carlos junto com o arquivo">Ressalva</button>${temRes(p.cod,p.mes)?'':'<span class="muted" style="font-size:12px">Envie a ressalva do cliente no topo antes de usar este botão.</span>'}</div>`:''):`
+     ${p.just?`<div style="background:var(--info-soft);padding:8px 10px;border-radius:6px"><b>Justificativa:</b> ${esc(p.just)}</div>`:'<div class="muted">Aguardando justificativa do executivo.</div>'}
+     ${p.status==='Justificada'||p.status==='Aberta'?`<label class="field" for="r-${p.id}">Seu parecer</label><textarea id="r-${p.id}" placeholder="Opcional">${esc(p.parecer)}</textarea>
+     <div class="row"><button class="btn sm ok" data-act="Aprovada">Aprovar</button><button class="btn sm warn" data-act="AprovadaPend">Aprovar com pendência</button><button class="btn sm ghost res" data-act="Ressalvada" title="O ponto está coberto pela ressalva do cliente. Precisa da ressalva anexada.">Aprovar por ressalva</button><button class="btn sm ghost" data-act="Materialidade" title="O valor não é material. Fica registrado e volta como recorrente se continuar no próximo mês.">Aprovar por materialidade</button><button class="btn sm bad" data-act="Reprovada">Reprovar</button></div>`:(p.parecer?`<div class="hist">Seu parecer: ${esc(p.parecer)}</div>`:'')}`}
+  </div>`;
+}
+function bindCards(modo){
+  document.querySelectorAll('.card-p button[data-act]').forEach(b=>b.onclick=()=>{
+    const id=b.closest('.card-p').dataset.id, p=S.pend.find(x=>x.id===id), act=b.dataset.act;
+    if(act==='partic-open'){abertoPart=id;return render()}
+    if(act==='partic-x'){abertoPart=null;return render()}
+    if(act==='partic'){const t=$('#pt-'+id).value.trim(); if(!t) return toast('Escreva a particularidade');
+      const op=(document.querySelector(`input[name="po-${id}"]:checked`)||{}).value||'cliente'; const cli=S.clientes.find(c=>c.cod===p.cod);
+      const reg={id:uid(),premissa:p.premissa,conta:p.conta,contaNome:p.contaNome,texto:t,pendente:op==='sim',escopo:op==='mes'?'mes':'cliente',regraGeral:op==='regra',data:new Date().toISOString().slice(0,10),mes:p.mes,cod:p.cod,descr:p.descr};
+      cli.partic=cli.partic||[]; cli.partic.push(reg); S.treino=S.treino||[]; S.treino.push({...reg,cliente:cli.nome});
+      p.partic={texto:t,pendente:op==='sim',data:reg.data}; if(op!=='sim'){p.status='Desconsiderada';p.hist.push({q:'Carlos',t:'marcou como não pendência'})} else p.hist.push({q:'Carlos',t:'registrou particularidade'});
+      abertoPart=null; save(); render(); return toast(op==='sim'?'Particularidade registrada':'Pendência desconsiderada e particularidade salva');}
+    if(act==='ress'){if(!temRes(p.cod,p.mes)) return toast('Envie primeiro a ressalva do cliente no campo "Upload ressalva"');
+      const t=$('#j-'+id).value.trim(); p.just=t||'Ponto coberto pela ressalva do cliente.'; p.ress=true; p.status='Justificada'; p.hist.push({q:execNome(p.exec),t:'indicou ressalva'}); save(); render(); return toast('Ressalva enviada ao Carlos');}
+    if(act==='just'){const t=$('#j-'+id).value.trim(); if(!t) return toast('Escreva a justificativa'); p.just=t;p.status='Justificada';p.hist.push({q:execNome(p.exec),t:'justificou'}); toast('Justificativa enviada ao Carlos');}
+    else{const par=$('#r-'+id).value.trim(); if(act==='Reprovada'&&!par) return toast('Escreva o motivo da reprovação');
+      if(act==='Ressalvada'&&!temRes(p.cod,p.mes)) return toast('Anexe a ressalva do cliente antes (botão + Ressalva no topo da pendência)');
+      const jaRep=(p.anterior&&p.anterior.status==='Reprovada')||p.hist.some(h=>h.q==='Carlos'&&/reprovada/i.test(h.t));
+      if(act==='Reprovada'&&jaRep&&b.dataset.conf!=='1'){b.dataset.conf='1';b.textContent='Confirmar nova reprovação';
+        const w=document.createElement('div');w.className='rep-aviso';w.textContent='Atenção: você está reprovando novamente esta pendência'+(p.anterior&&p.anterior.status==='Reprovada'?' (já reprovada em '+mesTxt(p.anterior.mes)+')':' (já foi reprovada antes)')+'. Clique em "Confirmar nova reprovação" para seguir.';b.closest('.row').before(w);return}
+      p.parecer=par; if(act==='Reprovada'&&b.dataset.conf==='1') p.reprovNovamente=true; p.status=act;p.hist.push({q:'Carlos',t:stTxt[act].toLowerCase()+(b.dataset.conf==='1'?' novamente':'')}); toast('Pendência '+stTxt[act].toLowerCase()+(b.dataset.conf==='1'?' novamente':''));}
+    save(); render();
+  });
+}
+let novaAberta=false, nova={cod:'',mes:'',conta:''};
+function formNova(){
+  const cls=S.clientes.filter(c=>S.balancetes[c.cod]);
+  if(!nova.cod||!S.balancetes[nova.cod]) nova.cod=filtro.cod&&S.balancetes[filtro.cod]?filtro.cod:(cls[0]||{}).cod||'';
+  const ms=nova.cod?Object.keys(S.balancetes[nova.cod]).sort().reverse():[]; if(!ms.includes(nova.mes)) nova.mes=ms[0]||'';
+  const rows=(nova.cod&&nova.mes?S.balancetes[nova.cod][nova.mes]:[])||[]; if(nova.cod&&nova.mes&&!S.balancetes[nova.cod][nova.mes]) garantirBal(nova.cod).then(()=>{if(novaAberta)render()});
+  return `<div class="panel nova"><h2>Nova pendência</h2>
+   <div class="row">
+    <div class="field"><label for="n-cli">Cliente</label><select id="n-cli">${cls.map(c=>`<option value="${c.cod}">${c.cod} · ${esc(c.nome)}</option>`).join('')}</select></div>
+    <div class="field"><label for="n-mes">Balancete</label><select id="n-mes">${ms.map(m=>`<option value="${m}">${mesTxt(m)}</option>`).join('')}</select></div>
+   </div>
+   <div class="field" style="margin-top:10px"><label for="n-busca">Conta</label><input id="n-busca" placeholder="Filtre pelo código ou pelo nome da conta" autocomplete="off">
+    <div class="contas" id="n-lista" role="listbox" aria-label="Contas do balancete"></div>
+    <div id="n-sel" class="muted"></div></div>
+   <div class="field" style="margin-top:10px"><label for="n-txt">O que está errado</label><textarea id="n-txt" placeholder="Ex.: conta de empréstimo sem apropriação de juros desde junho"></textarea></div>
+   <label class="chk" style="margin-top:8px"><input type="checkbox" id="n-rep" checked> Apontar de novo nos próximos meses enquanto a conta tiver saldo (vira regra do cliente)</label>
+   <div class="row" style="margin-top:10px"><button class="btn" id="n-ok">Incluir pendência</button><button class="btn ghost" id="n-x">Cancelar</button></div></div>`;
+}
+function listaContas(){
+  const rows=(S.balancetes[nova.cod]||{})[nova.mes]||[]; const q=norm($('#n-busca').value.trim());
+  const f=rows.filter(r=>!q||r.conta.includes(q)||norm(r.desc).includes(q)||norm(r.ctx||'').includes(q));
+  $('#n-lista').innerHTML=f.slice(0,300).map(r=>`<button type="button" role="option" aria-selected="${nova.conta===r.conta}" class="conta-op${nova.conta===r.conta?' sel':''}" data-conta="${esc(r.conta)}"><span class="mono">${esc(r.conta)}</span><span>${esc(r.desc)}</span><span class="num mono">${dc(r.sf)}</span></button>`).join('')||'<p class="muted" style="padding:8px">Nenhuma conta encontrada.</p>';
+  $('#n-lista').querySelectorAll('[data-conta]').forEach(b=>b.onclick=()=>{nova.conta=b.dataset.conta;const r=rows.find(x=>x.conta===nova.conta);$('#n-sel').innerHTML=`Conta escolhida: <b>${esc(r.conta)} · ${esc(r.desc)}</b> (saldo ${dc(r.sf)})`;listaContas()});
+}
+function bindNova(){
+  nova.conta=''; listaContas(); $('#n-busca').oninput=listaContas;
+  $('#n-cli').value=nova.cod; $('#n-mes').value=nova.mes;
+  $('#n-cli').onchange=e=>{nova.cod=e.target.value;nova.mes='';render()};
+  $('#n-mes').onchange=e=>{nova.mes=e.target.value;render()};
+  $('#n-x').onclick=()=>{novaAberta=false;render()};
+  $('#n-ok').onclick=()=>{
+    const rows=S.balancetes[nova.cod][nova.mes]; const t=$('#n-txt').value.trim();
+    const r=rows.find(x=>x.conta===nova.conta);
+    if(!r) return toast('Clique em uma conta da lista'); if(!t) return toast('Escreva o que está errado');
+    const cli=S.clientes.find(c=>c.cod===nova.cod);
+    if($('#n-rep').checked){cli.manuais=cli.manuais||[]; if(!cli.manuais.some(m=>m.conta===r.conta)) cli.manuais.push({conta:r.conta,texto:t,desde:nova.mes});}
+    const k=nova.cod+'|M01|'+r.conta; const ant=S.pend.filter(p=>p.key===k&&p.mes<nova.mes);
+    S.pend.push({id:uid(),key:k,cod:nova.cod,mes:nova.mes,exec:cli.exec,premissa:'M01',conta:r.conta,contaNome:r.desc,sAnt:r.si,sAt:r.sf,descr:t+` (saldo ${dc(r.sf)})`,partic:null,status:'Aberta',just:'',parecer:'',recorrente:ant.length>0,desde:ant.length?ant[0].desde:nova.mes,anterior:null,hist:[{q:'Carlos',t:'incluiu manualmente'}]});
+    S.treino=S.treino||[]; S.treino.push({id:uid(),premissa:'M01',conta:r.conta,contaNome:r.desc,texto:t,pendente:true,escopo:'manual',regraGeral:false,data:new Date().toISOString().slice(0,10),mes:nova.mes,cod:nova.cod,descr:'Incluída manualmente pelo auditor',cliente:cli.nome});
+    novaAberta=false; save(); render(); toast('Pendência incluída');
+  };
+}
+function pendView(){
+  const ps=S.pend.filter(p=>noPer(p.mes)&&(!filtro.prem||p.premissa===filtro.prem)&&(!filtro.rec||(p.recorrente&&ATIVA(p)))&&(!filtro.exec||p.exec===filtro.exec)&&(filtro.status?p.status===filtro.status:p.status!=='Desconsiderada')&&(!filtro.cod||p.cod===filtro.cod))
+    .sort((a,b)=>(a.status==='Justificada'?0:1)-(b.status==='Justificada'?0:1)||(b.mes>a.mes?1:-1));
+  $('#view').innerHTML=`<div><h1>Pendências</h1><p class="lead">Justificadas aparecem primeiro, para você aprovar ou reprovar. Pendência apontada em mês anterior aparece como recorrente. Use "Escrever particularidade" quando o apontamento não for pendência para aquele cliente: o portal lembra nos próximos meses.</p></div>
+  <div class="row">
+   ${selPeriodo()}
+   <div class="field"><label for="f-ex">Executivo</label><select id="f-ex"><option value="">Todos</option>${S.execs.map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('')}</select></div>
+   <div class="field"><label for="f-cli">Cliente</label><select id="f-cli"><option value="">Todos</option>${S.clientes.map(c=>({c,n:S.pend.filter(p=>p.cod===c.cod&&noPer(p.mes)&&(!filtro.exec||p.exec===filtro.exec)&&(filtro.status?p.status===filtro.status:p.status!=='Desconsiderada')).length})).filter(x=>x.n||x.c.cod===filtro.cod).map(({c,n})=>`<option value="${c.cod}">${c.cod} · ${esc(c.nome)} (${n})</option>`).join('')}</select></div>
+   <div class="field"><label for="f-st">Status</label><select id="f-st"><option value="">Todos</option>${Object.entries(stTxt).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+   <button class="btn" id="nova">+ Nova pendência</button>
+   <span class="muted">${ps.length} pendências</span>${filtro.prem||filtro.rec?`<button class="btn sm ghost" id="f-clr">${filtro.prem?'Premissa '+filtro.prem:'Só recorrentes'} ✕</button>`:''}
+  </div>
+  ${novaAberta?formNova():''}
+  <div class="list">${ps.map(p=>cardPend(p,'admin')).join('')||'<p class="muted">Nenhuma pendência com esses filtros.</p>'}</div>`;
+  $('#nova').onclick=()=>{novaAberta=!novaAberta;render()}; if(novaAberta) bindNova();
+  bindPeriodo(); if($('#f-clr')) $('#f-clr').onclick=()=>{filtro.prem='';filtro.rec=false;render()}; $('#f-ex').value=filtro.exec;$('#f-cli').value=filtro.cod;$('#f-st').value=filtro.status;
+  $('#f-ex').onchange=e=>{filtro.exec=e.target.value;render()};$('#f-cli').onchange=e=>{filtro.cod=e.target.value;render()};$('#f-st').onchange=e=>{filtro.status=e.target.value;render()};
+  bindCards('admin');
+}
+let exCod='';
+const limSt={Enviada:'Aguardando sua análise',Aceita:'Aceita',Recusada:'Recusada'};
+function limTabela(exId,admin){
+  const ls=Object.entries(S.lim||{}).filter(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return c&&c.exec===exId&&noPer(mes)&&!auditado(cod)});
+  if(!ls.length) return '';
+  return `<div class="comp-h" style="margin-top:14px">Limitação de escopo (${ls.length})</div><div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Mês</th><th>Motivo</th><th>Formalização</th><th>Situação</th></tr></thead><tbody>
+   ${ls.map(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return `<tr><td class="mono">${cod}</td><td>${esc(c.nome)}</td><td class="mono">${mesTxt(mes)}</td><td>${esc(v.motivo)}</td>
+    <td>${(S.limArq||{})[k]?`<button class="pdfbtn" data-limv="${k}">Abrir</button>`:'<span class="muted">sem arquivo</span>'}</td>
+    <td><span class="pill p-${v.status==='Aceita'?'Aprovada':v.status==='Recusada'?'Reprovada':'Justificada'}">${limSt[v.status]&&!admin&&v.status==='Enviada'?'Enviada ao Carlos':limSt[v.status]}</span>${v.parecer?`<div class="muted" style="font-size:12px">${esc(v.parecer)}</div>`:''}
+    ${admin&&v.status==='Enviada'?`<div class="row" style="gap:6px;margin-top:4px"><button class="btn sm ok" data-lima="${k}">Aceitar</button><button class="btn sm bad" data-limr="${k}">Recusar</button></div>`:admin?`<a href="#" data-limu="${k}">desfazer</a>`:''}</td></tr>`}).join('')}
+   </tbody></table></div>`;
+}
+function bindLim(){
+  document.querySelectorAll('[data-limv]').forEach(b=>b.onclick=e=>{e.stopPropagation();abrirPdf(b.dataset.limv,'limArq')});
+  document.querySelectorAll('[data-lima]').forEach(b=>b.onclick=e=>{e.stopPropagation();S.lim[b.dataset.lima].status='Aceita';save();render();toast('Limitação de escopo aceita')});
+  document.querySelectorAll('[data-limr]').forEach(b=>b.onclick=e=>{e.stopPropagation();S.lim[b.dataset.limr].status='Recusada';S.lim[b.dataset.limr].parecer='Recusada pelo Carlos';save();render();toast('Limitação recusada. O cliente volta para "Em aberto".')});
+  document.querySelectorAll('[data-limu]').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();S.lim[a.dataset.limu].status='Enviada';delete S.lim[a.dataset.limu].parecer;save();render()});
+}
+let meusFiltro='', limForm=null, refMes='';
+function meusView(){
+  const e=S.execs.find(x=>x.id===perfil); const cart=S.clientes.filter(c=>c.exec===perfil);
+  if(!refMes) refMes=periodo.startsWith('M:')?periodo.slice(2):ultMes();
+  const sit=c=>situacao(c.cod);
+  const au=cart.filter(c=>sit(c)==='aud'), li=cart.filter(c=>sit(c)==='lim'), ab=cart.filter(c=>sit(c)==='aberto');
+  const PP=S.pend.filter(p=>p.exec===perfil&&noPer(p.mes)&&p.status!=='Desconsiderada');
+  const ap=au.filter(c=>!PP.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length;
+  const pc=cart.length?ap/cart.length*100:0;
+  const lista=cart.filter(c=>!meusFiltro||sit(c)===meusFiltro).sort((a,b)=>({aberto:0,lim:1,aud:2}[sit(a)]-{aberto:0,lim:1,aud:2}[sit(b)])||a.nome.localeCompare(b.nome));
+  $('#view').innerHTML=`<div><h1>Olá, ${esc(e.nome)}</h1><p class="lead">Aqui está a situação da sua carteira. Suba os balancetes em "Subir balancetes". Para cliente sem fechamento no mês, informe a limitação de escopo e anexe a formalização enviada ao cliente. No fim, todos os clientes precisam estar auditados ou com limitação de escopo.</p></div>
+  ${MODO==='admin'?'<div class="demo">Assim o executivo vê o portal quando abre o link dele.</div>':''}
+  <div class="row">${selPeriodo()}<div class="field"><label for="m-ref">Mês de referência da limitação</label><input type="month" id="m-ref" value="${refMes}"></div></div>
+  <div class="kpis">
+   <button class="kpi click" data-mf=""><div class="l">Clientes</div><div class="n">${cart.length}</div><div class="go">Ver todos →</div></button>
+   <button class="kpi click" data-mf="aud"><div class="l">Auditados ${info('Clientes com balancete enviado no período.')}</div><div class="n">${au.length}</div><div class="go">Ver →</div></button>
+   <button class="kpi click" data-mf="lim"><div class="l">Limitação de escopo ${info('Clientes sem fechamento no mês, com formalização anexada.')}</div><div class="n">${li.length}</div><div class="go">Ver →</div></button>
+   <button class="kpi click" data-mf="aberto"><div class="l">Faltam ${info('Clientes sem balancete e sem limitação de escopo. Precisa chegar a zero.')}</div><div class="n" style="color:${ab.length?'var(--bad)':'var(--ok)'}">${ab.length}</div><div class="go">Ver os que faltam →</div></button>
+   <div class="kpi"><div class="l">% Aprovados ${info('Clientes aprovados ÷ total da carteira. Meta: '+META+'%.')}</div><div class="n"><span class="pct ${pc>=META?'pct-ok':'pct-bad'}">${pc.toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span></div><div class="go">${ap} de ${cart.length} aprovados</div></div>
+  </div>
+  ${ab.length?`<p style="margin:0"><b>De ${cart.length} clientes cadastrados, faltam ${ab.length} balancetes.</b> <button class="btn sm" data-goenv>Subir balancetes</button></p>`:`<p style="margin:0;color:var(--ok)"><b>Todos os ${cart.length} clientes estão apontados.</b></p>`}
+  <div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Sistema</th><th>Situação</th><th>Arquivos</th><th class="num">Pendências</th><th></th></tr></thead><tbody>
+  ${lista.map(c=>{const st=sit(c); const ms=Object.keys(S.balancetes[c.cod]||{}).filter(noPer).sort(); const mes=ms.at(-1); const L=limDe(c.cod); const recus=Object.entries(S.lim||{}).find(([k,v])=>k.startsWith(c.cod+'|')&&noPer(k.split('|')[1])&&v.status==='Recusada');
+   const np=PP.filter(p=>p.cod===c.cod&&ATIVA(p)).length;
+   return `<tr><td class="mono">${c.cod}</td><td>${esc(c.nome)}</td><td>${esc(c.sistema||'')}</td>
+    <td>${st==='aud'?`<span class="pill p-Aprovada">Auditado ${mesTxt(mes)}</span>`:st==='lim'?`<span class="pill p-AprovadaPend">Limitação de escopo ${mesTxt(L.mes)}</span><div class="muted" style="font-size:12px">${esc(L.motivo)} · ${L.status==='Enviada'?'enviada ao Carlos':L.status.toLowerCase()}</div>`:`<span class="pill p-Aberta">Falta balancete</span>${recus?'<div class="muted" style="font-size:12px;color:var(--bad)">Limitação recusada pelo Carlos</div>':''}`}</td>
+    <td>${st==='aud'?btnPdf(c.cod,mes)+' '+btnRes(c.cod,mes):st==='lim'&&(S.limArq||{})[L.k]?`<button class="pdfbtn" data-limv="${L.k}">Formalização</button>`:''}</td>
+    <td class="num">${st==='aud'?(np?`<a href="#" data-gomin="${c.cod}">${np}</a>`:'<span class="pill p-Aprovada">Validado</span>'):''}</td>
+    <td>${st==='aberto'?`<button class="btn sm ghost" data-limopen="${c.cod}">Limitação de escopo</button>`:st==='lim'&&L.status==='Enviada'?`<a href="#" data-limdel="${L.k}">desfazer</a>`:''}</td></tr>
+    ${limForm===c.cod?`<tr><td colspan="7"><div class="partic-form">
+      <b>Limitação de escopo · ${c.cod} · ${esc(c.nome)} · ${mesTxt(refMes)}</b>
+      <label class="field" for="lf-m">Motivo</label><textarea id="lf-m">Não tenho fechamento para este mês.</textarea>
+      <label class="field" for="lf-a">Formalização enviada ao cliente com as pendências (obrigatório)</label><input type="file" id="lf-a" accept="${'.pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml'}">
+      <div class="row"><button class="btn sm" id="lf-ok">Enviar ao Carlos</button><button class="btn sm ghost" id="lf-x">Cancelar</button></div></div></td></tr>`:''}`}).join('')||'<tr><td colspan="7" class="muted">Nenhum cliente nesta situação.</td></tr>'}
+  </tbody></table></div>`;
+  bindPeriodo(); bindLim();
+  $('#m-ref').onchange=ev=>{refMes=ev.target.value;render()};
+  document.querySelectorAll('[data-mf]').forEach(b=>b.onclick=()=>{meusFiltro=b.dataset.mf;render()});
+  document.querySelectorAll('[data-goenv]').forEach(b=>b.onclick=()=>{tab='enviar';render()});
+  document.querySelectorAll('[data-gomin]').forEach(a=>a.onclick=ev=>{ev.preventDefault();exCod=a.dataset.gomin;tab='minhas';render()});
+  document.querySelectorAll('[data-limopen]').forEach(b=>b.onclick=()=>{limForm=b.dataset.limopen;render()});
+  document.querySelectorAll('[data-limdel]').forEach(a=>a.onclick=ev=>{ev.preventDefault();delete S.lim[a.dataset.limdel];save();render();toast('Limitação de escopo removida')});
+  if($('#lf-x')) $('#lf-x').onclick=()=>{limForm=null;render()};
+  if($('#lf-ok')) $('#lf-ok').onclick=async()=>{const m=$('#lf-m').value.trim(), f=$('#lf-a').files[0];
+    if(!m) return toast('Escreva o motivo'); if(!f) return toast('Anexe a formalização enviada ao cliente');
+    if(!refMes) return toast('Escolha o mês de referência');
+    const k=limForm+'|'+refMes; $('#lf-ok').disabled=true; toast('Enviando…');
+    await guardarPdf(limForm,refMes,f,'limArq'); S.lim=S.lim||{}; S.lim[k]={motivo:m,status:'Enviada',data:new Date().toISOString().slice(0,10),exec:perfil};
+    limForm=null; save(); render(); toast('Limitação de escopo enviada ao Carlos')};
+}
+function minhas(){
+  const e=S.execs.find(x=>x.id===perfil);
+  const base=S.pend.filter(p=>p.exec===perfil&&ATIVA(p)&&noPer(p.mes));
+  if(exCod&&!base.some(p=>p.cod===exCod)) exCod='';
+  const ps=base.filter(p=>!exCod||p.cod===exCod).sort((a,b)=>(['Aberta','Reprovada'].includes(a.status)?0:1)-(['Aberta','Reprovada'].includes(b.status)?0:1));
+  const cls=[...new Set(base.map(p=>p.cod))].map(cod=>({c:S.clientes.find(c=>c.cod===cod)||{cod,nome:''},n:base.filter(p=>p.cod===cod).length})).sort((a,b)=>b.n-a.n);
+  const mesesCli=exCod?Object.keys(S.balancetes[exCod]||{}).filter(noPer).sort().reverse():[];
+  $('#view').innerHTML=`<div><h1>Olá, ${esc(e.nome)}</h1><p class="lead">Estas são as pendências da auditoria dos seus clientes. Escreva a justificativa ou o que foi corrigido e envie. O Carlos vai aprovar ou reprovar.</p></div>
+  ${MODO==='admin'?'<div class="demo">Assim o executivo vê o portal quando abre o link dele. Ele não vê outros executivos nem o painel.</div>':''}
+  <div class="row">${selPeriodo()}
+   <div class="field"><label for="x-cli">Cliente</label><select id="x-cli"><option value="">Todos (${base.length} pendências)</option>${cls.map(({c,n})=>`<option value="${c.cod}">${c.cod} · ${esc(c.nome)} (${n})</option>`).join('')}</select></div>
+   ${mesesCli.length?`<div class="field"><span>Balancete usado na análise</span><div class="row" style="gap:6px">${mesesCli.map(m=>(S.pdf||{})[exCod+'|'+m]?`<button class="btn sm ghost" data-pdf="${exCod}|${m}">Ver balancete ${mesTxt(m)}</button>`:`<span class="muted">${mesTxt(m)}: PDF não guardado</span>`).join('')}</div></div>`:''}
+  </div>
+  ${mesesCli.length?`<div class="field"><span>Ressalva do cliente ${info('Se o cliente tem ressalva formalizada para os pontos apontados, envie o arquivo aqui. Depois clique em "Ressalva" na pendência que ela cobre. O Carlos vê o arquivo junto com o balancete.')}</span><div class="resbox">${mesesCli.map(m=>temRes(exCod,m)?`<button class="btn sm ghost" data-res="${exCod}|${m}">Ver ressalva ${mesTxt(m)}</button><label class="btn sm ghost">Trocar<input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml" data-addres="${exCod}|${m}"></label>`:`<label class="btn sm res">⇪ Upload ressalva ${mesTxt(m)}<input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml" data-addres="${exCod}|${m}"></label>`).join('')}</div></div>`:`<p class="muted" style="margin:0">Escolha o cliente para ver o balancete e enviar a ressalva.</p>`}
+  <div class="list">${ps.map(p=>cardPend(p,'exec')).join('')||'<p class="muted">Nenhuma pendência em aberto. Bom trabalho!</p>'}</div>`;
+  bindPeriodo(); $('#x-cli').value=exCod; $('#x-cli').onchange=ev=>{exCod=ev.target.value;render()};
+  bindCards('exec');
+}
+function clientesView(){
+  $('#view').innerHTML=`<div><h1>Clientes e premissas</h1><p class="lead">Importe a carteira no mesmo formato da planilha do Thiago (Cod, Razão Social, Grupo, Tributação, Ass Responsável, Coo Responsável, Executivo, Status). Os limites de PMP e PMR e as premissas desligadas valem só para o cliente.</p></div>
+  <div class="row"><label class="btn ghost" style="display:inline-block">Importar carteira (Excel)<input type="file" id="imp" accept=".xlsx,.xls" hidden></label><span class="muted">${S.clientes.length} clientes · ${S.clientes.filter(c=>S.balancetes[c.cod]).length} com balancete</span></div>
+  <div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Grupo</th><th>Tributação</th><th>Executivo</th><th>Coordenador</th><th>Analista</th><th>Sistema</th><th class="num">PMP limite</th><th class="num">PMR limite</th><th>Premissas desligadas</th><th class="num">Particularidades</th><th>Histórico</th></tr></thead><tbody>
+  ${S.clientes.map((c,i)=>`<tr><td class="mono">${c.cod}</td><td>${esc(c.nome)}</td><td>${esc(c.grupo||'')}</td><td>${esc(c.trib||'')}</td><td>${esc(execNome(c.exec))}</td><td>${esc(nomeCurto(c.coord))}</td><td>${esc(nomeCurto(c.analista))}</td><td>${esc(c.sistema||'')}</td>
+   <td class="num"><input type="number" id="pmp-${i}" value="${c.pmp}" style="width:70px" data-i="${i}" data-k="pmp"></td>
+   <td class="num"><input type="number" id="pmr-${i}" value="${c.pmr}" style="width:70px" data-i="${i}" data-k="pmr"></td>
+   <td><input id="off-${i}" value="${(c.off||[]).join(', ')}" placeholder="ex.: P02, S03" style="width:120px" data-i="${i}" data-k="off"></td>
+   <td class="num">${(c.partic||[]).length||''}</td>
+   <td><input id="obs-${i}" value="${esc(c.obs||'')}" style="min-width:200px" data-i="${i}" data-k="obs"></td></tr>`).join('')}
+  </tbody></table></div>
+  <div><h2>Premissas gerais aplicadas a todos</h2><div class="tbl"><table><thead><tr><th>ID</th><th>Premissa</th><th>Criticidade</th></tr></thead><tbody>
+  ${PREMISSAS.map(p=>`<tr><td class="mono">${p.id}</td><td>${esc(p.nome)}</td><td><span class="sev sev-${p.sev}"></span>${p.sev}</td></tr>`).join('')}</tbody></table></div></div>`;
+  document.querySelectorAll('input[data-k]').forEach(inp=>inp.onchange=()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
+    c[k]=k==='off'?inp.value.split(/[,\s]+/).map(s=>s.trim().toUpperCase()).filter(Boolean):k==='obs'?inp.value:+inp.value; save(); toast('Cliente atualizado')});
+  $('#imp').onchange=async e=>{const f=e.target.files[0]; if(!f) return; try{const n=importarCarteira(await f.arrayBuffer()); save(); render(); toast(n+' clientes novos importados')}catch(err){toast(err.message)}};
+}
+function importarCarteira(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:true}); const aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});
+  const hi=aoa.findIndex(r=>r.some(c=>/^cod/i.test(String(c)))&&r.some(c=>/raz/i.test(String(c))));
+  if(hi<0) throw new Error('Não achei o cabeçalho com Cod e Razão Social');
+  const vistos={}; let n=0;
+  aoa.slice(hi+1).forEach(r=>{
+    const cod=String(r[0]).trim(); if(!/^\d+$/.test(cod)) return;
+    const A=String(r[10]||'').trim()!=='';
+    const d=A?{nome:r[1],grupo:r[2],trib:r[5],analista:r[8]||r[6],coord:r[9]||r[7],exec:r[10],status:r[11]}:{nome:r[1],grupo:r[2],trib:r[5],analista:r[6],coord:r[7],exec:r[8],status:''};
+    if(vistos[cod]&&!A) return; vistos[cod]=1;
+    const exNome=String(d.exec||'').trim()||'Sem executivo';
+    let ex=S.execs.find(e=>norm(e.nome)===norm(exNome)); if(!ex){ex={id:uid(),nome:exNome,token:novoToken()};S.execs.push(ex)}
+    let c=S.clientes.find(c=>c.cod===cod); if(!c){c={cod,pmp:60,pmr:45,obs:'',off:[],partic:[],sistema:''};S.clientes.push(c);n++}
+    Object.assign(c,{nome:String(d.nome).trim(),grupo:String(d.grupo||'').trim(),trib:String(d.trib||'').trim(),analista:String(d.analista||'').trim(),coord:String(d.coord||'').trim(),exec:ex.id});
+    if(d.status) c.statusAnt=String(d.status).trim();
+    S.pend.filter(p=>p.cod===cod).forEach(p=>p.exec=ex.id);
+  });
+  return n;
+}
+function treinoView(){
+  const T=(S.treino||[]).slice().reverse();
+  $('#view').innerHTML=`<div><h1>Particularidades e treino</h1><p class="lead">Tudo o que você marcou com "Escrever particularidade". Uma vez por mês, copie esta lista e me envie: eu ajusto as regras de análise para todos os clientes e mantenho as particularidades de cada um.</p></div>
+  <div class="row"><button class="btn" id="t-copy">Copiar para enviar ao Claude</button><span class="muted">${T.length} registros · ${T.filter(t=>t.regraGeral).length} dizem que a análise está errada para todos</span></div>
+  <div class="tbl"><table id="t-tbl"><thead><tr><th>Data</th><th>Cliente</th><th>Premissa</th><th>Conta</th><th>Apontamento</th><th>Decisão</th><th>Particularidade</th><th></th></tr></thead><tbody>
+  ${T.map(t=>`<tr><td class="mono">${t.data}</td><td>${t.cod} · ${esc(t.cliente)}</td><td>${t.premissa}</td><td><span class="mono">${esc(t.conta)}</span> ${esc(t.contaNome)}</td><td>${esc(t.descr)}</td>
+   <td>${t.escopo==='manual'?'<span class="pill p-AprovadaPend">Incluída por você</span>':t.regraGeral?'<span class="pill p-Reprovada">Análise errada</span>':t.pendente?'<span class="pill p-Aberta">Continua pendência</span>':t.escopo==='mes'?'<span class="pill p-Justificada">Só neste mês</span>':'<span class="pill p-Aprovada">Não é pendência no cliente</span>'}</td>
+   <td>${esc(t.texto)}</td><td><button class="btn sm ghost" data-del="${t.id}">Apagar</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">Nenhuma particularidade registrada ainda. Abra uma pendência e use "Escrever particularidade".</td></tr>'}
+  </tbody></table></div>`;
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const id=b.dataset.del; S.treino=S.treino.filter(t=>t.id!==id); S.clientes.forEach(c=>c.partic=(c.partic||[]).filter(x=>x.id!==id)); save(); render(); toast('Particularidade apagada')});
+  $('#t-copy').onclick=()=>{const txt=T.map(t=>[t.data,t.cod+' '+t.cliente,t.premissa,t.conta+' '+t.contaNome,t.descr,t.escopo==='manual'?'PENDENCIA INCLUIDA MANUALMENTE':t.regraGeral?'ANALISE ERRADA (todos)':t.pendente?'continua pendencia':t.escopo==='mes'?'nao pendencia so neste mes':'nao pendencia no cliente',t.texto].join('\t')).join('\n');
+    (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast('Copiado'),()=>{const sel=getSelection(),rg=document.createRange();rg.selectNode($('#t-tbl'));sel.removeAllRanges();sel.addRange(rg);toast('Tabela selecionada, use Ctrl+C')})};
+}
+function execsView(){
+  $('#view').innerHTML=`<div><h1>Executivos e links</h1><p class="lead">Cada executivo tem um link próprio com um código longo e aleatório. Se um link vazar, gere um novo e o antigo para de funcionar.</p></div>
+  <div class="tbl"><table><thead><tr><th>Executivo</th><th class="num">Clientes</th><th>Link de acesso</th><th></th></tr></thead><tbody>
+  ${S.execs.map((e,i)=>`<tr><td>${esc(e.nome)}</td><td class="num">${S.clientes.filter(c=>c.exec===e.id).length}</td><td><div class="linkbox">${linkExec(e.token)}</div></td>
+  <td><button class="btn sm ghost" data-copy="${i}">Copiar</button> <button class="btn sm ghost" data-new="${i}">Gerar novo link</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="panel"><h2>Importar backup do protótipo</h2><p class="muted">Use uma vez para trazer o que você fez no protótipo. Substitui todos os dados do portal pelos do backup, incluindo os PDFs guardados.</p>
+  <label class="btn ghost">Escolher o arquivo de backup<input type="file" id="imp-bk" accept=".json" hidden></label> <span class="muted" id="bk-st"></span></div>`;
+  $('#imp-bk').onchange=e=>{const f=e.target.files[0]; if(f) importarBackup(f)};
+  document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{const t=linkExec(S.execs[b.dataset.copy].token);
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Link copiado'),()=>toast('Selecione o link e copie'))});
+  document.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>{S.execs[b.dataset.new].token=novoToken();save();render();toast('Novo link gerado, o antigo foi cancelado')});
+}
+
+let resEx='';
+function resumoLinhas(){
+  return S.clientes.filter(c=>!resEx||c.exec===resEx).map(c=>{
+    const meses=Object.keys(S.balancetes[c.cod]||{}).filter(noPer).sort(); const ult=meses.at(-1);
+    const ps=ult?S.pend.filter(p=>p.cod===c.cod&&p.mes===ult&&ATIVA(p)):[];
+    const pontos=!ult?'':ps.length?[...new Set(ps.map(p=>(PM[p.premissa]||{nome:p.premissa}).nome+(p.recorrente?' (recorrente)':'')))].join(' / '):'Validado';
+    const ressalva=((S.aprovRes||{})[c.cod+'|'+ult]||{}).tipo==='res'||ps.some(p=>p.status==='AprovadaPend'||p.status==='Ressalvada')?'Sim':'NA';
+    return {cod:c.cod,razao:c.nome,grupo:c.grupo||'',hub:c.trib||c.hub||'',resp:c.analista||execNome(c.exec),pontos,ressalva,lim:ult?'NA':(()=>{const L=limDe(c.cod);return L?'Limitação de escopo ('+mesTxt(L.mes)+'): '+L.motivo+(L.status==='Aceita'?'':' · '+limSt[L.status].toLowerCase()):'Balancete não enviado'})(),mes:ult?mesTxt(ult):'—',ant:c.statusAnt||''};
+  }).sort((a,b)=>(a.mes==='—')-(b.mes==='—')||a.grupo.localeCompare(b.grupo));
+}
+function resumoView(){
+  const L=resumoLinhas();
+  $('#view').innerHTML=`<div><h1>Resumo por executivo</h1><p class="lead">No mesmo formato do resumo que você dispara hoje. Usa o último balancete de cada cliente dentro do período escolhido; apontamentos marcados como "não é pendência" não entram. Ressalva fica "Sim" quando o cliente foi aprovado com ressalva ou há pendência aprovada com pendência. "Status anterior" vem da planilha da carteira. Copie e cole no Excel ou no e-mail.</p></div>
+  <div class="row">${selPeriodo()}<div class="field"><label for="r-ex">Executivo</label><select id="r-ex"><option value="">Todos</option>${S.execs.map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('')}</select></div>
+  <button class="btn" id="r-copy">Copiar tabela</button></div>
+  <div class="tbl"><table id="r-tbl"><thead><tr><th>Código</th><th>Razão</th><th>Grupo</th><th>Tributação</th><th>Responsável</th><th>Balancete</th><th>Pontos técnicos</th><th>Ressalva</th><th>Limitação de escopo</th><th>Status anterior</th></tr></thead><tbody>
+  ${L.map(r=>`<tr><td class="mono">${r.cod}</td><td>${esc(r.razao)}</td><td>${esc(r.grupo)}</td><td>${esc(r.hub)}</td><td>${esc(r.resp)}</td><td class="mono">${r.mes}</td><td style="min-width:260px">${r.pontos==='Validado'?'<span class="pill p-Aprovada">Validado</span>':esc(r.pontos)}</td><td>${r.ressalva}</td><td>${esc(r.lim)}</td><td>${esc(r.ant)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+  bindPeriodo(); $('#r-ex').value=resEx; $('#r-ex').onchange=e=>{resEx=e.target.value;render()};
+  $('#r-copy').onclick=()=>{const t=['Código\tRazão\tGrupo\tTributação\tResponsável\tBalancete\tPontos Técnicos\tRessalva\tLimitação de Escopo\tStatus anterior',...L.map(r=>[r.cod,r.razao,r.grupo,r.hub,r.resp,r.mes,r.pontos,r.ressalva,r.lim,r.ant].join('\t'))].join('\n');
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Tabela copiada, cole no Excel'),()=>{const sel=getSelection(),rg=document.createRange();rg.selectNode($('#r-tbl'));sel.removeAllRanges();sel.addRange(rg);toast('Tabela selecionada, use Ctrl+C')})};
+}
+
+(function(){const tip=document.createElement('div');tip.className='tip';tip.hidden=true;document.body.appendChild(tip);
+  const show=el=>{tip.textContent=el.dataset.tip;tip.hidden=false;const r=el.getBoundingClientRect(),w=Math.min(300,innerWidth-24);tip.style.maxWidth=w+'px';
+    const tw=tip.offsetWidth,th=tip.offsetHeight;let x=Math.min(Math.max(12,r.left+r.width/2-tw/2),innerWidth-tw-12),y=r.top-th-8;if(y<8)y=r.bottom+8;tip.style.left=x+'px';tip.style.top=y+'px'};
+  const hide=()=>tip.hidden=true;
+  document.addEventListener('mouseover',e=>{const el=e.target.closest('.info');el?show(el):hide()});
+  document.addEventListener('focusin',e=>{const el=e.target.closest('.info');el?show(el):hide()});
+  document.addEventListener('click',e=>{const el=e.target.closest('.info');if(el){e.stopPropagation();e.preventDefault();show(el)}},true);
+  addEventListener('scroll',hide,true);})();
+// ================== Nuvem (Supabase) ==================
+const SB_URL='https://zogpcygxunmyulgyimhv.supabase.co', SB_KEY='sb_publishable_kolBVaTX3SpS8XAxGRYrLA_Ftm6K8Tz';
+const sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,storageKey:'confirp-auditoria-auth'}});
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const MODO=TOKEN?'exec':'admin';
+const SEP='\u0001';
+const MAPAS=['pdf','ress','limArq','lim','aprovRes','visto','enviados'];
+const TIPOS_EXEC=['cli','pend','bal','pdf','ress','lim','limArq','enviados'];
+let snap=new Map(), tSync=null, sincronizando=false, pendenteSync=false, ultimaCarga=0;
+
+function novoToken(){const a=new Uint8Array(18);crypto.getRandomValues(a);return [...a].map(b=>b.toString(36).padStart(2,'0')).join('').slice(0,28)}
+function linkExec(t){return location.origin+location.pathname+'?t='+t}
+function statusSync(t,erro){const el=$('#sync'); if(!el) return; el.textContent=t; el.classList.toggle('err',!!erro)}
+function execDeCod(cod){const c=S.clientes.find(c=>c.cod===cod);return c?c.exec:null}
+function baixarBytes(data,nome){const u=URL.createObjectURL(new Blob([data],{type:'application/octet-stream'}));const a=document.createElement('a');a.href=u;a.download=nome;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000)}
+function paraB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>rej(r.error);r.readAsDataURL(file)})}
+function b64ParaBytes(b){const s=atob(b);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u}
+function msgErro(e){const m=(e&&(e.message||e.error_description))||String(e);
+  if(/link_invalido/.test(m)) return 'Este link não é mais válido. Peça um novo link ao Carlos.';
+  if(/fora_da_carteira|cliente_novo/.test(m)) return 'Este cliente não é da sua carteira.';
+  if(/arquivo_grande/.test(m)) return 'O arquivo passa de 15 MB.';
+  if(/Failed to fetch|NetworkError/i.test(m)) return 'Sem conexão com a internet.';
+  return m}
+
+// ----- montar linhas a partir do estado -----
+function linhasDeS(){
+  const L=new Map(); const put=(tipo,chave,exec,valor)=>L.set(tipo+SEP+chave,{tipo,chave,exec,valor});
+  if(MODO==='admin'){S.execs.forEach(e=>put('exec',e.id,e.id,e)); (S.treino||[]).forEach(t=>put('treino',t.id,null,t));}
+  S.clientes.forEach(c=>put('cli',c.cod,c.exec,c));
+  S.pend.forEach(p=>put('pend',p.id,p.exec,p));
+  MAPAS.forEach(m=>Object.entries(S[m]||{}).forEach(([k,v])=>put(m,k,execDeCod(k.split('|')[0]),v)));
+  Object.entries(S.balancetes).forEach(([cod,ms])=>Object.entries(ms).forEach(([mes,rows])=>{if(rows) put('bal',cod+'|'+mes,execDeCod(cod),rows)}));
+  if(MODO==='exec') for(const [k,r] of L) if(!TIPOS_EXEC.includes(r.tipo)) L.delete(k);
+  return L;
+}
+function agendarSync(){clearTimeout(tSync); statusSync('Salvando…'); tSync=setTimeout(()=>{tSync=null;sincronizar()},500)}
+async function sincronizar(){
+  if(sincronizando){pendenteSync=true;return}
+  sincronizando=true;
+  try{
+    const L=linhasDeS(), up=[], del=[];
+    for(const [k,r] of L){const j=JSON.stringify(r.valor); if(snap.get(k)!==j) up.push({...r,_k:k,_j:j})}
+    for(const k of snap.keys()){if(!L.has(k)){const [tipo,chave]=k.split(SEP); if(tipo!=='bal') del.push({tipo,chave,_k:k})}}
+    const lote=(arr,n)=>{const o=[];for(let i=0;i<arr.length;i+=n)o.push(arr.slice(i,i+n));return o};
+    if(MODO==='exec'){
+      for(const ch of lote(up,40)){const {error}=await sb.rpc('ex_gravar',{t:TOKEN,linhas:ch.map(({tipo,chave,valor})=>({tipo,chave,valor})),apagar:[]}); if(error) throw error; ch.forEach(r=>snap.set(r._k,r._j))}
+      const dl=del.filter(d=>['pend','lim','ress','limArq'].includes(d.tipo));
+      for(const ch of lote(dl,200)){const {error}=await sb.rpc('ex_gravar',{t:TOKEN,linhas:[],apagar:ch.map(({tipo,chave})=>({tipo,chave}))}); if(error) throw error}
+      del.forEach(d=>snap.delete(d._k));
+    }else{
+      for(const ch of lote(up,40)){const now=new Date().toISOString();
+        const {error}=await sb.from('itens').upsert(ch.map(({tipo,chave,exec,valor})=>({tipo,chave,exec,valor,atualizado:now}))); if(error) throw error; ch.forEach(r=>snap.set(r._k,r._j))}
+      const porTipo={}; del.forEach(d=>(porTipo[d.tipo]=porTipo[d.tipo]||[]).push(d));
+      for(const [tipo,ds] of Object.entries(porTipo)) for(const ch of lote(ds,150)){
+        const {error}=await sb.from('itens').delete().eq('tipo',tipo).in('chave',ch.map(d=>d.chave)); if(error) throw error; ch.forEach(d=>snap.delete(d._k))}
+    }
+    statusSync('Tudo salvo');
+  }catch(e){console.error(e); statusSync('Não salvou: '+msgErro(e)+' Tentando de novo…',true); setTimeout(agendarSync,8000)}
+  finally{sincronizando=false; if(pendenteSync){pendenteSync=false;agendarSync()}}
+}
+addEventListener('beforeunload',e=>{if(tSync||sincronizando){e.preventDefault();e.returnValue=''}});
+
+// ----- carregar -----
+async function paginar(q){let out=[];for(let i=0;;i+=1000){const {data,error}=await q().range(i,i+999); if(error) throw error; out=out.concat(data||[]); if(!data||data.length<1000) break} return out}
+function montarS(rows,balKeys){
+  const N={execs:[],clientes:[],balancetes:{},pend:[],treino:[]}; snap=new Map();
+  for(const r of rows){
+    if(r.tipo==='bal'){const [cod,mes]=r.chave.split('|');(N.balancetes[cod]=N.balancetes[cod]||{})[mes]=null;continue}
+    snap.set(r.tipo+SEP+r.chave,JSON.stringify(r.valor));
+    if(r.tipo==='exec') N.execs.push(r.valor); else if(r.tipo==='cli') N.clientes.push(r.valor); else if(r.tipo==='pend') N.pend.push(r.valor);
+    else if(r.tipo==='treino') N.treino.push(r.valor); else if(MAPAS.includes(r.tipo)) (N[r.tipo]=N[r.tipo]||{})[r.chave]=r.valor;
+  }
+  (balKeys||[]).forEach(k=>{const [cod,mes]=k.split('|');(N.balancetes[cod]=N.balancetes[cod]||{})[mes]=null});
+  N.treino.sort((a,b)=>(a.data||'')<(b.data||'')?-1:1);
+  S=N; ultimaCarga=Date.now();
+}
+async function carregar(){
+  if(MODO==='exec'){const rows=await paginar(()=>sb.rpc('ex_ler',{t:TOKEN})); montarS(rows,[]); const e=S.execs[0]; if(!e) throw new Error('link_invalido'); perfil=e.id;}
+  else{const rows=await paginar(()=>sb.from('itens').select('tipo,chave,exec,valor').neq('tipo','bal').order('tipo').order('chave'));
+    const bk=await paginar(()=>sb.from('itens').select('chave').eq('tipo','bal').order('chave')); montarS(rows,bk.map(r=>r.chave));}
+}
+async function garantirBal(cod){
+  const ms=S.balancetes[cod]; if(!ms) return; const ks=Object.keys(ms).filter(m=>ms[m]===null).map(m=>cod+'|'+m); if(!ks.length) return;
+  const {data,error}=MODO==='exec'?await sb.rpc('ex_bal',{t:TOKEN,chaves:ks}):await sb.from('itens').select('chave,valor').eq('tipo','bal').in('chave',ks);
+  if(error) throw error;
+  (data||[]).forEach(r=>{const mes=r.chave.split('|')[1]; ms[mes]=r.valor; snap.set('bal'+SEP+r.chave,JSON.stringify(r.valor))});
+}
+
+// ----- arquivos -----
+async function guardarArqNuvem(cod,mes,file,mapa){
+  const k=cod+'|'+mes; S[mapa]=S[mapa]||{};
+  if(file.size>15*1024*1024){toast('O arquivo passa de 15 MB');return}
+  const b64=await paraB64(file);
+  const {data,error}=MODO==='exec'?await sb.rpc('ex_salvar_arq',{t:TOKEN,nome:file.name,b64}):await sb.rpc('adm_salvar_arq',{nome:file.name,b64,dono:execDeCod(cod)});
+  if(error){toast('Não consegui guardar o arquivo: '+msgErro(error));return}
+  S[mapa][k]={aid:data,nome:file.name};
+}
+async function lerArqNuvem(k,mapa){
+  const m=(S[mapa]||{})[k]; if(!m||!m.aid) return null;
+  const {data,error}=MODO==='exec'?await sb.rpc('ex_ler_arq',{t:TOKEN,aid:m.aid}):await sb.rpc('adm_ler_arq',{aid:m.aid});
+  if(error||!data||!data.length) return null; return b64ParaBytes(data[0].b64);
+}
+
+// ----- importar backup do protótipo -----
+async function importarBackup(f){
+  const st=$('#bk-st'); let j;
+  try{j=JSON.parse(await f.text())}catch(e){st.textContent='Arquivo inválido.';return}
+  if(!j||j.app!=='auditoria-confirp'||!j.S){st.textContent='Este arquivo não é um backup do portal.';return}
+  const N=j.S; N.execs=N.execs||[]; N.clientes=N.clientes||[]; N.balancetes=N.balancetes||{}; N.pend=N.pend||[]; N.treino=N.treino||[];
+  N.execs.forEach(e=>{if(!e.token||e.token.length<16) e.token=novoToken()});
+  const exDe=cod=>{const c=N.clientes.find(c=>c.cod===cod);return c?c.exec:null};
+  const arqs=Object.entries(j.arquivos||{}); let i=0, falhas=0;
+  for(const m of ['pdf','ress','limArq']){const o=N[m]||{}; for(const k of Object.keys(o)) if(!(j.arquivos||{})[m+'|'+k]) delete o[k]}
+  for(const [key,a] of arqs){i++; st.textContent=`Enviando arquivos ${i} de ${arqs.length}…`;
+    const [m,cod,mes]=key.split('|'); const {data,error}=await sb.rpc('adm_salvar_arq',{nome:a.nome,b64:a.b64,dono:exDe(cod)});
+    if(error){falhas++;delete (N[m]||{})[cod+'|'+mes];continue} (N[m]=N[m]||{})[cod+'|'+mes]={aid:data,nome:a.nome}}
+  st.textContent='Gravando os dados…';
+  S=N; snap.forEach((v,k)=>{if(k.startsWith('bal'+SEP)) snap.delete(k)});
+  await sincronizar();
+  st.textContent=`Backup importado: ${N.clientes.length} clientes, ${N.pend.length} pendências, ${arqs.length-falhas} arquivos.`+(falhas?` ${falhas} arquivos falharam.`:'');
+  renderPerfil(); render();
+}
+
+// ----- entrada -----
+function telaLogin(msg){
+  $('#tabs').innerHTML=''; document.querySelector('.who').hidden=true; $('#sair').hidden=true;
+  $('#view').innerHTML=`<form class="login panel" id="lg"><h1>Entrar</h1><p class="muted" style="margin:0">Acesso do auditor. Executivos entram pelo link próprio.</p>
+   <div class="field"><label for="lg-e">E-mail</label><input id="lg-e" type="email" autocomplete="username" required></div>
+   <div class="field"><label for="lg-s">Senha</label><input id="lg-s" type="password" autocomplete="current-password" required></div>
+   <button class="btn" type="submit">Entrar</button><p class="muted" id="lg-m" style="margin:0;color:var(--bad)">${esc(msg||'')}</p></form>`;
+  $('#lg').onsubmit=async ev=>{ev.preventDefault(); $('#lg-m').textContent='Entrando…';
+    const {error}=await sb.auth.signInWithPassword({email:$('#lg-e').value.trim(),password:$('#lg-s').value});
+    if(error){$('#lg-m').textContent='E-mail ou senha incorretos.';return} entrarAdmin()};
+}
+async function entrarAdmin(){
+  const {data:ok,error}=await sb.rpc('is_admin'); if(error||!ok){await sb.auth.signOut(); return telaLogin('Este e-mail não está liberado como auditor.')}
+  $('#view').innerHTML='<p class="muted">Carregando a auditoria…</p>';
+  try{await carregar()}catch(e){$('#view').innerHTML=`<p class="muted">Não consegui carregar: ${esc(msgErro(e))}</p>`;return}
+  document.querySelector('.who').hidden=false; $('#sair').hidden=false;
+  $('#sair').onclick=async()=>{await sb.auth.signOut(); location.reload()};
+  statusSync('Tudo salvo'); perfil='admin'; if(!['painel','upload','pend','resumo','clientes','treino','execs'].includes(tab)) tab='painel';
+  renderPerfil(); render();
+}
+async function iniciar(){
+  $('#view').innerHTML='<p class="muted">Carregando…</p>';
+  if(MODO==='exec'){
+    document.querySelector('.who').hidden=true;
+    try{await carregar()}catch(e){$('#tabs').innerHTML='';$('#view').innerHTML=`<div class="panel"><h1>Link inválido</h1><p class="muted">${esc(msgErro(e))}</p></div>`;return}
+    tab='meus'; statusSync('Tudo salvo'); render();
+  }else{
+    const {data}=await sb.auth.getSession(); if(data&&data.session) entrarAdmin(); else telaLogin();
+  }
+  document.addEventListener('visibilitychange',async()=>{
+    if(document.visibilityState!=='visible'||tSync||sincronizando||Date.now()-ultimaCarga<60000) return;
+    if(MODO==='admin'){const {data}=await sb.auth.getSession(); if(!data||!data.session) return}
+    try{await carregar(); render()}catch(e){}
+  });
+}
+
+iniciar();
+</script>
