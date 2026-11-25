@@ -248,7 +248,7 @@ function lerMeta(texto,nomeArq,linhas){
 }
 function interpretarBalancete({linhas,texto},nomeArq,modoConta){
   const formato=detectarFormato(texto), meta=lerMeta(texto,nomeArq,linhas);
-  if(!modoConta){const cli=typeof S!=='undefined'&&S.clientes?S.clientes.find(c=>c.cod===meta.cod):null; const sis=(cli&&cli.sistema)||(formato.startsWith('SAP')?'SAP B1':formato); modoConta=((typeof S!=='undefined'&&S.layouts||{})[sis]||{}).conta||'auto';}
+  if(!modoConta){const cli=typeof S!=='undefined'&&S.clientes?S.clientes.find(c=>c.cod===meta.cod):null; const sis=(cli&&cli.sistema)||(formato.startsWith('SAP')?'SAP B1':formato); modoConta=(cli&&cli.layout&&cli.layout.conta)||((typeof S!=='undefined'&&S.layouts||{})[sis]||{}).conta||'auto';}
   // corta o resumo final (Domínio)
   let fim=linhas.findIndex(l=>l.t.some(t=>/RESUMO DO BALANCETE/i.test(t.s))); if(fim<0) fim=linhas.length;
   const L=linhas.slice(0,fim);
@@ -635,7 +635,7 @@ function prevLote(){
       if(!c){c={cod:x.cod,nome:x.nome||('Cliente '+x.cod),grupo:'',hub:'',exec:ex,coord:'',sistema:sistemaDe(x.formato),pmp:60,pmr:45,obs:'',off:[]};S.clientes.push(c)}
       if(!c.sistema) c.sistema=sistemaDe(x.formato);
       S.balancetes[x.cod]=S.balancetes[x.cod]||{}; S.balancetes[x.cod][x.mes]=x.rows.map(({conta,desc,si,d,c,sf,ctx})=>({conta,desc,si,d,c,sf,ctx}));
-      const a=auditar(S,x.cod,x.mes); aplicar(S,x.cod,x.mes,a); n+=a.length;
+      const a=auditar(S,x.cod,x.mes); aplicar(S,x.cod,x.mes,a); n+=a.length; gravarDiag(c,x.mes,S.balancetes[x.cod][x.mes],a);
     });
     $('#u-go').disabled=true; $('#u-go').textContent='Guardando os PDFs…';
     await Promise.all(ok.map(x=>x.file?guardarPdf(x.cod,x.mes,x.file):null));
@@ -846,35 +846,72 @@ function minhas(){
   bindCards('exec');
 }
 let cliBusca='', cliEdit=null, cliInat=false, cliIncomp=false;
-const MODOS_CONTA={auto:'Automático (usa o código com pontos; se não houver, o último código da linha)',class:'Classificação (código com pontos, ex.: 1.1.01.001)',primeiro:'Primeiro código da linha',ultimo:'Último código da linha'};
+const MODOS_CONTA={auto:'Automático: o portal decide (recomendado)',class:'O código com pontos (ex.: 1.1.01.001)',primeiro:'O primeiro código da linha (1ª coluna)',ultimo:'O último código antes da descrição'};
 async function reprocessar(cod,mes){
   const k=cod+'|'+mes; const data=await obterPdf(k,'pdf'); if(!data) return {erro:'PDF não guardado'};
   const nome=((S.pdf||{})[k]||{}).nome||(cod+'_'+mes+'.pdf');
   if(typeof garantirBal==='function') try{await garantirBal(cod)}catch(e){}
   let r; try{r=interpretarBalancete(await pdfParaLinhas(data.slice()),nome)}catch(e){return {erro:e.message}}
   S.balancetes[cod]=S.balancetes[cod]||{}; S.balancetes[cod][mes]=r.rows.map(({conta,desc,si,d,c,sf,ctx})=>({conta,desc,si,d,c,sf,ctx}));
-  const a=auditar(S,cod,mes); aplicar(S,cod,mes,a); return {contas:r.rows.length,pend:a.length};
+  const a=auditar(S,cod,mes); aplicar(S,cod,mes,a); const cli=S.clientes.find(c=>c.cod===cod); const dg=cli?gravarDiag(cli,mes,S.balancetes[cod][mes],a):null; return {contas:r.rows.length,pend:a.length,diag:dg};
 }
 async function reprocessarLote(lista,el){
   let ok=0,falha=0; for(let i=0;i<lista.length;i++){const [cod,mes]=lista[i]; if(el) el.textContent=`Reprocessando ${i+1} de ${lista.length}…`; const r=await reprocessar(cod,mes); r.erro?falha++:ok++}
   save(); render(); toast(`${ok} balancetes reprocessados`+(falha?`, ${falha} sem PDF ou com erro`:''));
 }
-function layoutsHtml(){
-  const sis=[...new Set(['SAP B1','Domínio','Protheus','LINX','Outro',...S.clientes.map(c=>c.sistema).filter(Boolean)])];
-  const L=S.layouts||{};
-  return `<div><h2>Layout do balancete por sistema</h2><p class="lead">Diga de qual coluna sai a conta contábil em cada sistema. Depois de mudar, use "Reprocessar" para ler de novo os balancetes já enviados. Pendências já justificadas não são apagadas.</p>
-  <div class="tbl"><table><thead><tr><th>Sistema</th><th>Conta contábil</th><th>Observação do layout</th><th class="num">Balancetes com PDF</th><th></th></tr></thead><tbody>
-  ${sis.map(x=>{const n=ATIVOS().filter(c=>(c.sistema||'')===x).reduce((a,c)=>a+Object.keys(S.balancetes[c.cod]||{}).filter(m=>(S.pdf||{})[c.cod+'|'+m]).length,0);
-   return `<tr><td>${esc(x)}</td><td><select data-lay="${esc(x)}" aria-label="Conta contábil ${esc(x)}">${Object.entries(MODOS_CONTA).map(([k,v])=>`<option value="${k}"${(L[x]||{}).conta===k||(!(L[x]||{}).conta&&k==='auto')?' selected':''}>${v}</option>`).join('')}</select></td>
-   <td><input data-layobs="${esc(x)}" value="${esc((L[x]||{}).obs||'')}" placeholder="Ex.: Código reduzido | Classificação | Descrição | Saldos" style="min-width:260px"></td>
-   <td class="num">${n}</td><td>${n?`<button class="btn sm ghost" data-repsis="${esc(x)}">Reprocessar ${n}</button>`:''}</td></tr>`}).join('')}
-  </tbody></table></div><p class="muted" id="rep-st"></p></div>`;
+function diagnosticar(rows,a){
+  const n=rows.length, tot=rows.reduce((x,r)=>x+r.sf,0), nf=rows.filter(r=>Math.abs(r.si+r.d-r.c-r.sf)>0.02).length;
+  const curtos=n?rows.filter(r=>/^\d{1,4}$/.test(r.conta)).length/n:0, p01=(a||[]).filter(x=>x.premissa==='P01').length;
+  const prob=[];
+  if(!n) prob.push('Nenhuma conta lida');
+  if(curtos>0.4) prob.push('A conta parece ser o código reduzido');
+  if(Math.abs(tot)>1) prob.push('Saldos não fecham (diferença '+fmt(tot)+')');
+  if(n&&nf/n>0.05) prob.push(`${nf} contas em que anterior + débito − crédito ≠ atual`);
+  if(p01>5&&p01/Math.max(n,1)>0.15) prob.push(`${p01} saldos invertidos (muito acima do normal)`);
+  return {n,prob,em:new Date().toISOString().slice(0,10)};
 }
-function bindLayouts(){
-  document.querySelectorAll('[data-lay]').forEach(sl=>sl.onchange=()=>{S.layouts=S.layouts||{};(S.layouts[sl.dataset.lay]=S.layouts[sl.dataset.lay]||{}).conta=sl.value;save();toast('Layout de '+sl.dataset.lay+' salvo. Use Reprocessar para aplicar aos balancetes já enviados.')});
-  document.querySelectorAll('[data-layobs]').forEach(i=>i.onchange=()=>{S.layouts=S.layouts||{};(S.layouts[i.dataset.layobs]=S.layouts[i.dataset.layobs]||{}).obs=i.value.trim();save();toast('Observação salva')});
-  document.querySelectorAll('[data-repsis]').forEach(b=>b.onclick=()=>{const x=b.dataset.repsis; const lista=[];ATIVOS().filter(c=>(c.sistema||'')===x).forEach(c=>Object.keys(S.balancetes[c.cod]||{}).forEach(m=>{if((S.pdf||{})[c.cod+'|'+m]) lista.push([c.cod,m])}));
-    document.querySelectorAll('[data-repsis]').forEach(x=>x.disabled=true); reprocessarLote(lista,$('#rep-st'))});
+function gravarDiag(c,mes,rows,a){if(!c||!rows) return null; c.diag=c.diag||{}; c.diag[mes]=diagnosticar(rows,a); return c.diag[mes]}
+let layEdit=null, layMsg='';
+function leituraHtml(){
+  const sus=[]; ATIVOS().forEach(c=>Object.entries(c.diag||{}).forEach(([mes,d])=>{if(d.prob.length&&noPer(mes)) sus.push({c,mes,d})}));
+  const semDiag=ATIVOS().reduce((a,c)=>a+Object.keys(S.balancetes[c.cod]||{}).filter(m=>!(c.diag||{})[m]).length,0);
+  const ed=layEdit&&S.clientes.find(c=>c.cod===layEdit);
+  return `<div class="panel" id="leitura"><h2>Leitura dos balancetes</h2>
+  <p class="muted" style="margin-top:0">Quando o portal lê um balancete com cara de erro, ele aparece aqui. Clique em <b>Ajustar leitura</b>, diga onde olhar naquele cliente e o portal lê de novo. O ajuste fica guardado no cadastro do cliente e vale para os próximos meses.</p>
+  <div class="row"><div class="field"><label for="lay-cli">Ajustar a leitura de qualquer cliente</label><select id="lay-cli"><option value="">Escolha o cliente…</option>${ATIVOS().filter(c=>S.balancetes[c.cod]).map(c=>`<option value="${c.cod}"${c.cod===layEdit?' selected':''}>${c.cod} · ${esc(c.nome)}</option>`).join('')}</select></div>
+   ${semDiag?`<button class="btn sm ghost" id="lay-ver">Verificar os ${semDiag} balancetes ainda não verificados</button>`:''}<span class="muted" id="lay-st"></span></div>
+  ${ed?layoutForm(ed):''}
+  ${sus.length?`<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Cliente</th><th>Mês</th><th>Sistema</th><th>O que parece errado</th><th></th></tr></thead><tbody>
+   ${sus.map(({c,mes,d})=>`<tr><td>${c.cod} · ${esc(c.nome)}</td><td class="mono">${mesTxt(mes)} ${btnPdf(c.cod,mes)}</td><td>${esc(c.sistema||'')}</td><td style="color:var(--bad)">${d.prob.map(esc).join('<br>')}</td><td><button class="btn sm" data-layed="${c.cod}">Ajustar leitura</button></td></tr>`).join('')}
+  </tbody></table></div>`:`<p class="muted" style="margin:6px 0 0">${semDiag?'Nenhum problema nos balancetes já verificados.':'Nenhum balancete com leitura suspeita.'}</p>`}</div>`;
+}
+function layoutForm(c){
+  const ms=Object.keys(S.balancetes[c.cod]||{}).sort(); const mes=ms.at(-1); const rows=(S.balancetes[c.cod]||{})[mes];
+  if(rows===null&&typeof garantirBal==='function') garantirBal(c.cod).then(()=>render());
+  const L=c.layout||{};
+  return `<div class="partic-form" style="margin-top:10px"><b>Leitura do balancete · ${c.cod} · ${esc(c.nome)}</b>
+   ${rows?`<div class="muted" style="font-size:12.5px">Como o portal leu ${mesTxt(mes)} (primeiras contas):</div>
+   <div class="tbl"><table><thead><tr><th>Conta lida</th><th>Outros códigos da linha</th><th>Descrição</th><th class="num">Saldo atual</th></tr></thead><tbody>
+   ${rows.slice(0,6).map(r=>`<tr><td class="mono">${esc(r.conta)}</td><td class="mono">${esc(r.reduz||'')}</td><td>${esc(r.desc)}</td><td class="num">${fmt(r.sf)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Carregando as contas…</p>'}
+   <fieldset class="opts"><legend class="muted">De onde tirar a conta contábil neste cliente?</legend>
+    ${Object.entries(MODOS_CONTA).map(([k,v])=>`<label><input type="radio" name="lay-m" value="${k}" ${(L.conta||'auto')===k?'checked':''}> ${v}</label>`).join('')}</fieldset>
+   <label class="field" for="lay-obs">Onde olhar neste cliente (anotação sua)</label><textarea id="lay-obs" placeholder="Ex.: a conta é a 1ª coluna (CÓDIGO DA CONTA); a 2ª é o reduzido">${esc(L.obs||'')}</textarea>
+   <div class="row"><button class="btn sm" id="lay-ok">Salvar e ler de novo</button><button class="btn sm ghost" id="lay-x">Fechar</button><span class="muted">${esc(layMsg)}</span></div></div>`;
+}
+function bindLeitura(){
+  $('#lay-cli').onchange=e=>{layEdit=e.target.value||null;layMsg='';render();$('#leitura').scrollIntoView()};
+  document.querySelectorAll('[data-layed]').forEach(b=>b.onclick=()=>{layEdit=b.dataset.layed;layMsg='';render();$('#leitura').scrollIntoView()});
+  if($('#lay-x')) $('#lay-x').onclick=()=>{layEdit=null;render()};
+  if($('#lay-ver')) $('#lay-ver').onclick=async()=>{const st=$('#lay-st'); $('#lay-ver').disabled=true; const cs=ATIVOS().filter(c=>Object.keys(S.balancetes[c.cod]||{}).some(m=>!(c.diag||{})[m]));
+    for(let i=0;i<cs.length;i++){const c=cs[i]; st.textContent=`Verificando ${i+1} de ${cs.length}…`; if(typeof garantirBal==='function') try{await garantirBal(c.cod)}catch(e){continue}
+      Object.entries(S.balancetes[c.cod]).forEach(([m,rows])=>{if(rows&&!(c.diag||{})[m]) gravarDiag(c,m,rows,S.pend.filter(p=>p.cod===c.cod&&p.mes===m))})}
+    save(); render(); toast('Verificação concluída')};
+  if($('#lay-ok')) $('#lay-ok').onclick=async()=>{const c=S.clientes.find(x=>x.cod===layEdit); const m=(document.querySelector('input[name=lay-m]:checked')||{}).value||'auto';
+    c.layout={conta:m,obs:$('#lay-obs').value.trim()}; $('#lay-ok').disabled=true; layMsg='Lendo de novo…'; $('#lay-ok').nextElementSibling.nextElementSibling.textContent=layMsg;
+    const ms=Object.keys(S.balancetes[c.cod]||{}).filter(x=>(S.pdf||{})[c.cod+'|'+x]); let ult=null,falha=0;
+    for(const x of ms){const r=await reprocessar(c.cod,x); if(r.erro) falha++; else ult=r}
+    save(); layMsg=!ms.length?'Ajuste salvo. Não há PDF guardado para ler de novo; vale no próximo envio.':ult?`Lido de novo: ${ult.contas} contas, ${ult.pend} apontamentos${ult.diag&&ult.diag.prob.length?'. Ainda parece errado: '+ult.diag.prob.join('; '):'. Leitura ok.'}`+(falha?` (${falha} sem PDF)`:''):'Não consegui ler o PDF de novo.';
+    render(); toast('Leitura ajustada')};
 }
 const SISTEMAS=['SAP B1','Domínio','Protheus','LINX','Outro'];
 function formCliente(c,novo){
@@ -894,7 +931,7 @@ function formCliente(c,novo){
     <div class="field" style="min-width:200px"><label for="ce-an">Analista</label><input id="ce-an" value="${esc(nomeCurto(c.analista||''))}" list="ce-ans"></div>
     <div class="field"><label for="ce-sis">Sistema</label><select id="ce-sis">${ops(SISTEMAS,c.sistema)}</select></div>
    </div>
-   <div class="row"><button class="btn sm" id="ce-ok">${novo?'Incluir cliente':'Salvar'}</button><button class="btn sm ghost" id="ce-x">Cancelar</button>
+   <div class="row"><button class="btn sm" id="ce-ok">${novo?'Incluir cliente':'Salvar'}</button><button class="btn sm ghost" id="ce-x">Cancelar</button>${novo?'':`<button class="btn sm ghost" data-layed="${esc(c.cod)}">Ajustar leitura do balancete</button>`}
     ${novo?'':`<span class="spacer"></span><button class="btn sm ${c.inativo?'ok':'bad'}" id="ce-inat">${c.inativo?'Reativar cliente':'Inativar cliente'}</button>`}</div>
    ${novo?'':`<p class="muted" style="margin:0;font-size:12px">Inativar tira o cliente da carteira, dos totais, do % de aprovados e do resumo. O histórico fica guardado e dá para reativar.</p>`}
   </div></td></tr>`;
@@ -928,10 +965,10 @@ function clientesView(){
    <td class="num">${(c.partic||[]).length||''}</td>
    <td><input id="obs-${i}" value="${esc(c.obs||'')}" style="min-width:200px" data-i="${i}" data-k="obs"></td></tr>${cliEdit===c.cod?formCliente(c,false):''}`}).join('')||'<tr><td colspan="14" class="muted">Nenhum cliente encontrado.</td></tr>'}
   </tbody></table></div>
-  ${layoutsHtml()}
+  ${leituraHtml()}
   <div><h2>Premissas gerais aplicadas a todos</h2><div class="tbl"><table><thead><tr><th>ID</th><th>Premissa</th><th>Criticidade</th></tr></thead><tbody>
   ${PREMISSAS.map(p=>`<tr><td class="mono">${p.id}</td><td>${esc(p.nome)}</td><td><span class="sev sev-${p.sev}"></span>${p.sev}</td></tr>`).join('')}</tbody></table></div></div>`;
-  bindLayouts();
+  bindLeitura();
   if($('#cli-inc')) $('#cli-inc').onchange=e=>{cliIncomp=e.target.checked;render()};
   document.querySelectorAll('.tbl input[data-k],.tbl select[data-k],.tbl textarea[data-k]').forEach(inp=>inp.onchange=async()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
     if(['nome','grupo','trib','coord','analista'].includes(k)){const v=inp.value.trim();
