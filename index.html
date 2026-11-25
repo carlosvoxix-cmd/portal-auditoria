@@ -165,7 +165,7 @@ td a{color:var(--brand)}
 <main><div class="wrap" id="view"></div></main>
 <div class="toast" id="toast" hidden></div>
 <div class="pdfv" id="pdfv" hidden role="dialog" aria-modal="true" aria-labelledby="pdfv-t"><div class="pdfv-box">
- <div class="pdfv-h"><b id="pdfv-t"></b><span class="spacer"></span><button class="btn sm" id="pdfv-d" hidden>Baixar</button><label class="btn sm ghost" id="pdfv-r" title="Substituir pelo PDF correto deste cliente e mês">Trocar PDF<input type="file" accept=".pdf" hidden id="pdfv-ri"></label><button class="btn sm ghost" id="pdfv-x" onclick="document.getElementById('pdfv').hidden=true">Fechar</button></div>
+ <div class="pdfv-h"><b id="pdfv-t"></b><span class="spacer"></span><button class="btn sm" id="pdfv-d" hidden>Baixar</button><button class="btn sm ghost" id="pdfv-rp" hidden title="Lê este PDF de novo com o layout do sistema do cliente e refaz a análise">Reprocessar</button><label class="btn sm ghost" id="pdfv-r" title="Substituir pelo PDF correto deste cliente e mês">Trocar PDF<input type="file" accept=".pdf" hidden id="pdfv-ri"></label><button class="btn sm ghost" id="pdfv-x" onclick="document.getElementById('pdfv').hidden=true">Fechar</button></div>
  <div class="pdfv-p" id="pdfv-p"></div></div></div>
 
 <script type="application/json" id="dados-iniciais">{}</script>
@@ -246,8 +246,9 @@ function lerMeta(texto,nomeArq,linhas){
   if(!m.mes){const mm=(nomeArq||'').match(/(\d{2})[_\-]?(\d{4})/); if(mm) m.mes=mm[2]+'-'+mm[1];}
   return m;
 }
-function interpretarBalancete({linhas,texto},nomeArq){
+function interpretarBalancete({linhas,texto},nomeArq,modoConta){
   const formato=detectarFormato(texto), meta=lerMeta(texto,nomeArq,linhas);
+  if(!modoConta){const cli=typeof S!=='undefined'&&S.clientes?S.clientes.find(c=>c.cod===meta.cod):null; const sis=(cli&&cli.sistema)||(formato.startsWith('SAP')?'SAP B1':formato); modoConta=((typeof S!=='undefined'&&S.layouts||{})[sis]||{}).conta||'auto';}
   // corta o resumo final (Domínio)
   let fim=linhas.findIndex(l=>l.t.some(t=>/RESUMO DO BALANCETE/i.test(t.s))); if(fim<0) fim=linhas.length;
   const L=linhas.slice(0,fim);
@@ -282,8 +283,9 @@ function interpretarBalancete({linhas,texto},nomeArq){
     if(codes.length&&temNum) rows.push(mk(codes,desc,nums));
   }
   function mk(codes,desc,n){
-    const conta=codes.length>1?codes[codes.length-1]:codes[0];
-    const r={conta,reduz:codes.length>1?codes[0]:'',desc,si:n.si||0,d:Math.abs(n.d||0),c:Math.abs(n.c||0),sf:n.sf||0,ctx:heads.slice(-1).join(' | ')};
+    const comPonto=codes.filter(c=>c.includes('.')).sort((a,b)=>b.length-a.length)[0];
+    const conta=modoConta==='primeiro'?codes[0]:modoConta==='ultimo'?codes[codes.length-1]:modoConta==='class'?(comPonto||codes[codes.length-1]):(comPonto||codes[codes.length-1]);
+    const r={conta,reduz:codes.filter(c=>c!==conta).join(' '),desc,si:n.si||0,d:Math.abs(n.d||0),c:Math.abs(n.c||0),sf:n.sf||0,ctx:heads.slice(-1).join(' | ')};
     return r;
   }
   // só contas analíticas
@@ -462,7 +464,7 @@ async function abrirPdf(k,mapa='pdf'){
   const m=S[mapa][k], [cod,mes]=k.split('|'), c=S.clientes.find(c=>c.cod===cod)||{};
   const box=$('#pdfv'); box.hidden=false; $('#pdfv-t').textContent=`${mapa==='ress'?'Ressalva · ':mapa==='limArq'?'Formalização da limitação de escopo · ':''}${cod} · ${c.nome||''} · ${mesTxt(mes)}`; const pg=$('#pdfv-p'); pg.innerHTML='<p class="muted">Abrindo o balancete…</p>';
   $('#pdfv-d').hidden=false;
-  $('#pdfv-r').hidden=mapa==='limArq'; const ri=$('#pdfv-ri'); ri.value=''; delete ri.dataset.addpdf; delete ri.dataset.addres; ri.dataset[mapa==='ress'?'addres':'addpdf']=k; ri.accept=mapa==='ress'?'.pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml':'.pdf'; $('#pdfv-r').firstChild.textContent=mapa==='ress'?'Trocar ressalva':'Trocar PDF';
+  $('#pdfv-r').hidden=mapa==='limArq'; $('#pdfv-rp').hidden=!(mapa==='pdf'&&perfil==='admin'); $('#pdfv-rp').onclick=async()=>{$('#pdfv-rp').disabled=true;toast('Reprocessando…');const r=await reprocessar(cod,mes);$('#pdfv-rp').disabled=false;if(r.erro)return toast('Não consegui reprocessar: '+r.erro);save();render();toast(`Reprocessado: ${r.contas} contas, ${r.pend} apontamentos`)}; const ri=$('#pdfv-ri'); ri.value=''; delete ri.dataset.addpdf; delete ri.dataset.addres; ri.dataset[mapa==='ress'?'addres':'addpdf']=k; ri.accept=mapa==='ress'?'.pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml':'.pdf'; $('#pdfv-r').firstChild.textContent=mapa==='ress'?'Trocar ressalva':'Trocar PDF';
   const data=await obterPdf(k,mapa);
   if(!data){pg.innerHTML='<p class="muted">Não consegui abrir este arquivo aqui. Ele foi guardado em outro navegador ou computador. Suba o arquivo de novo para ele ficar disponível.</p>';return}
   $('#pdfv-d').onclick=()=>baixarBytes(data,m.nome||`${cod}_${mes}.pdf`);
@@ -838,6 +840,36 @@ function minhas(){
   bindCards('exec');
 }
 let cliBusca='', cliEdit=null, cliInat=false, cliIncomp=false;
+const MODOS_CONTA={auto:'Automático (usa o código com pontos; se não houver, o último código da linha)',class:'Classificação (código com pontos, ex.: 1.1.01.001)',primeiro:'Primeiro código da linha',ultimo:'Último código da linha'};
+async function reprocessar(cod,mes){
+  const k=cod+'|'+mes; const data=await obterPdf(k,'pdf'); if(!data) return {erro:'PDF não guardado'};
+  const nome=((S.pdf||{})[k]||{}).nome||(cod+'_'+mes+'.pdf');
+  if(typeof garantirBal==='function') try{await garantirBal(cod)}catch(e){}
+  let r; try{r=interpretarBalancete(await pdfParaLinhas(data.slice()),nome)}catch(e){return {erro:e.message}}
+  S.balancetes[cod]=S.balancetes[cod]||{}; S.balancetes[cod][mes]=r.rows.map(({conta,desc,si,d,c,sf,ctx})=>({conta,desc,si,d,c,sf,ctx}));
+  const a=auditar(S,cod,mes); aplicar(S,cod,mes,a); return {contas:r.rows.length,pend:a.length};
+}
+async function reprocessarLote(lista,el){
+  let ok=0,falha=0; for(let i=0;i<lista.length;i++){const [cod,mes]=lista[i]; if(el) el.textContent=`Reprocessando ${i+1} de ${lista.length}…`; const r=await reprocessar(cod,mes); r.erro?falha++:ok++}
+  save(); render(); toast(`${ok} balancetes reprocessados`+(falha?`, ${falha} sem PDF ou com erro`:''));
+}
+function layoutsHtml(){
+  const sis=[...new Set(['SAP B1','Domínio','Protheus','LINX','Outro',...S.clientes.map(c=>c.sistema).filter(Boolean)])];
+  const L=S.layouts||{};
+  return `<div><h2>Layout do balancete por sistema</h2><p class="lead">Diga de qual coluna sai a conta contábil em cada sistema. Depois de mudar, use "Reprocessar" para ler de novo os balancetes já enviados. Pendências já justificadas não são apagadas.</p>
+  <div class="tbl"><table><thead><tr><th>Sistema</th><th>Conta contábil</th><th>Observação do layout</th><th class="num">Balancetes com PDF</th><th></th></tr></thead><tbody>
+  ${sis.map(x=>{const n=ATIVOS().filter(c=>(c.sistema||'')===x).reduce((a,c)=>a+Object.keys(S.balancetes[c.cod]||{}).filter(m=>(S.pdf||{})[c.cod+'|'+m]).length,0);
+   return `<tr><td>${esc(x)}</td><td><select data-lay="${esc(x)}" aria-label="Conta contábil ${esc(x)}">${Object.entries(MODOS_CONTA).map(([k,v])=>`<option value="${k}"${(L[x]||{}).conta===k||(!(L[x]||{}).conta&&k==='auto')?' selected':''}>${v}</option>`).join('')}</select></td>
+   <td><input data-layobs="${esc(x)}" value="${esc((L[x]||{}).obs||'')}" placeholder="Ex.: Código reduzido | Classificação | Descrição | Saldos" style="min-width:260px"></td>
+   <td class="num">${n}</td><td>${n?`<button class="btn sm ghost" data-repsis="${esc(x)}">Reprocessar ${n}</button>`:''}</td></tr>`}).join('')}
+  </tbody></table></div><p class="muted" id="rep-st"></p></div>`;
+}
+function bindLayouts(){
+  document.querySelectorAll('[data-lay]').forEach(sl=>sl.onchange=()=>{S.layouts=S.layouts||{};(S.layouts[sl.dataset.lay]=S.layouts[sl.dataset.lay]||{}).conta=sl.value;save();toast('Layout de '+sl.dataset.lay+' salvo. Use Reprocessar para aplicar aos balancetes já enviados.')});
+  document.querySelectorAll('[data-layobs]').forEach(i=>i.onchange=()=>{S.layouts=S.layouts||{};(S.layouts[i.dataset.layobs]=S.layouts[i.dataset.layobs]||{}).obs=i.value.trim();save();toast('Observação salva')});
+  document.querySelectorAll('[data-repsis]').forEach(b=>b.onclick=()=>{const x=b.dataset.repsis; const lista=[];ATIVOS().filter(c=>(c.sistema||'')===x).forEach(c=>Object.keys(S.balancetes[c.cod]||{}).forEach(m=>{if((S.pdf||{})[c.cod+'|'+m]) lista.push([c.cod,m])}));
+    document.querySelectorAll('[data-repsis]').forEach(x=>x.disabled=true); reprocessarLote(lista,$('#rep-st'))});
+}
 const SISTEMAS=['SAP B1','Domínio','Protheus','LINX','Outro'];
 function formCliente(c,novo){
   const ops=(l,v)=>[...new Set(['',...l,v||''])].map(o=>`<option value="${esc(o)}"${o===(v||'')?' selected':''}>${esc(o||'Escolha…')}</option>`).join('');
@@ -890,8 +922,10 @@ function clientesView(){
    <td class="num">${(c.partic||[]).length||''}</td>
    <td><input id="obs-${i}" value="${esc(c.obs||'')}" style="min-width:200px" data-i="${i}" data-k="obs"></td></tr>${cliEdit===c.cod?formCliente(c,false):''}`}).join('')||'<tr><td colspan="14" class="muted">Nenhum cliente encontrado.</td></tr>'}
   </tbody></table></div>
+  ${layoutsHtml()}
   <div><h2>Premissas gerais aplicadas a todos</h2><div class="tbl"><table><thead><tr><th>ID</th><th>Premissa</th><th>Criticidade</th></tr></thead><tbody>
   ${PREMISSAS.map(p=>`<tr><td class="mono">${p.id}</td><td>${esc(p.nome)}</td><td><span class="sev sev-${p.sev}"></span>${p.sev}</td></tr>`).join('')}</tbody></table></div></div>`;
+  bindLayouts();
   if($('#cli-inc')) $('#cli-inc').onchange=e=>{cliIncomp=e.target.checked;render()};
   document.querySelectorAll('.tbl input[data-k],.tbl select[data-k],.tbl textarea[data-k]').forEach(inp=>inp.onchange=async()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
     if(['nome','grupo','trib','coord','analista'].includes(k)){const v=inp.value.trim();
@@ -1033,7 +1067,7 @@ function msgErro(e){const m=(e&&(e.message||e.error_description))||String(e);
 // ----- montar linhas a partir do estado -----
 function linhasDeS(){
   const L=new Map(); const put=(tipo,chave,exec,valor)=>L.set(tipo+SEP+chave,{tipo,chave,exec,valor});
-  if(MODO==='admin'){S.execs.forEach(e=>put('exec',e.id,e.id,e)); (S.treino||[]).forEach(t=>put('treino',t.id,null,t));}
+  if(MODO==='admin'){S.execs.forEach(e=>put('exec',e.id,e.id,e)); if(S.layouts) put('cfg','layouts',null,S.layouts); (S.treino||[]).forEach(t=>put('treino',t.id,null,t));}
   S.clientes.forEach(c=>put('cli',c.cod,c.exec,c));
   S.pend.forEach(p=>put('pend',p.id,p.exec,p));
   MAPAS.forEach(m=>Object.entries(S[m]||{}).forEach(([k,v])=>put(m,k,execDeCod(k.split('|')[0]),v)));
@@ -1076,7 +1110,7 @@ function montarS(rows,balKeys){
     if(r.tipo==='bal'){const [cod,mes]=r.chave.split('|');(N.balancetes[cod]=N.balancetes[cod]||{})[mes]=null;continue}
     snap.set(r.tipo+SEP+r.chave,sig(r.exec,r.valor));
     if(r.tipo==='exec') N.execs.push(r.valor); else if(r.tipo==='cli') N.clientes.push(r.valor); else if(r.tipo==='pend') N.pend.push(r.valor);
-    else if(r.tipo==='treino') N.treino.push(r.valor); else if(MAPAS.includes(r.tipo)) (N[r.tipo]=N[r.tipo]||{})[r.chave]=r.valor;
+    else if(r.tipo==='treino') N.treino.push(r.valor); else if(r.tipo==='cfg') N[r.chave]=r.valor; else if(MAPAS.includes(r.tipo)) (N[r.tipo]=N[r.tipo]||{})[r.chave]=r.valor;
   }
   (balKeys||[]).forEach(k=>{const [cod,mes]=k.split('|');(N.balancetes[cod]=N.balancetes[cod]||{})[mes]=null});
   N.treino.sort((a,b)=>(a.data||'')<(b.data||'')?-1:1);
