@@ -400,6 +400,7 @@ const save=()=>agendarSync();
 const $=s=>document.querySelector(s); const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mesTxt=m=>{const [y,mm]=m.split('-');return mm+'/'+y};
 const stTxt={Aberta:'Aberta',Justificada:'Justificada',Aprovada:'Aprovada',AprovadaPend:'Aprovada c/ pendência',Reprovada:'Reprovada',Ressalvada:'Aprovada por ressalva',Materialidade:'Aprovada por materialidade',Desconsiderada:'Não é pendência'};
+const ATIVOS=()=>S.clientes.filter(c=>!c.inativo);
 const ATIVA=p=>!['Aprovada','Desconsiderada'].includes(p.status);
 const execNome=id=>(S.execs.find(e=>e.id===id)||{}).nome||'—';
 let periodo='';
@@ -479,11 +480,11 @@ function irPend(f){filtro={exec:'',status:'',cod:'',prem:'',rec:false,...f};tab=
 function painel(){
   const PP=S.pend.filter(p=>noPer(p.mes));
   const ab=PP.filter(p=>p.status==='Aberta').length, ju=PP.filter(p=>p.status==='Justificada').length, rec=PP.filter(p=>p.recorrente&&ATIVA(p)).length, rep=PP.filter(p=>p.status==='Reprovada').length;
-  const porExec=S.execs.map(e=>{const ps=PP.filter(p=>p.exec===e.id&&p.status!=='Desconsiderada');return {e,ps,ab:ps.filter(p=>p.status==='Aberta'||p.status==='Reprovada').length,ju:ps.filter(p=>p.status==='Justificada').length,rec:ps.filter(p=>p.recorrente).length,ap:S.clientes.filter(c=>c.exec===e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length,cl:S.clientes.filter(c=>c.exec===e.id).length,au:S.clientes.filter(c=>c.exec===e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).length,li:S.clientes.filter(c=>c.exec===e.id&&situacao(c.cod)==='lim').length,eab:S.clientes.filter(c=>c.exec===e.id&&situacao(c.cod)==='aberto').length}});
+  const porExec=S.execs.map(e=>{const ps=PP.filter(p=>p.exec===e.id&&p.status!=='Desconsiderada');return {e,ps,ab:ps.filter(p=>p.status==='Aberta'||p.status==='Reprovada').length,ju:ps.filter(p=>p.status==='Justificada').length,rec:ps.filter(p=>p.recorrente).length,ap:ATIVOS().filter(c=>c.exec===e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length,cl:ATIVOS().filter(c=>c.exec===e.id).length,au:ATIVOS().filter(c=>c.exec===e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).length,li:ATIVOS().filter(c=>c.exec===e.id&&situacao(c.cod)==='lim').length,eab:ATIVOS().filter(c=>c.exec===e.id&&situacao(c.cod)==='aberto').length}});
   const porPrem=PREMISSAS.map(p=>({p,ps:PP.filter(x=>x.premissa===p.id&&ATIVA(x))})).filter(x=>x.ps.length).sort((a,b)=>b.ps.length-a.ps.length);
   const maxP=Math.max(1,...porPrem.map(x=>x.ps.length));
   const compExec=x=>{
-    const cls=S.clientes.filter(c=>c.exec===x.e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).map(c=>{const ps=x.ps.filter(p=>p.cod===c.cod&&ATIVA(p));const ms=Object.keys(S.balancetes[c.cod]).filter(noPer).sort();return {c,ps,mes:ms.at(-1)}}).sort((a,b)=>(!!(S.visto||{})[a.c.cod+'|'+a.mes])-(!!(S.visto||{})[b.c.cod+'|'+b.mes])||b.ps.length-a.ps.length);
+    const cls=ATIVOS().filter(c=>c.exec===x.e.id&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).map(c=>{const ps=x.ps.filter(p=>p.cod===c.cod&&ATIVA(p));const ms=Object.keys(S.balancetes[c.cod]).filter(noPer).sort();return {c,ps,mes:ms.at(-1)}}).sort((a,b)=>(!!(S.visto||{})[a.c.cod+'|'+a.mes])-(!!(S.visto||{})[b.c.cod+'|'+b.mes])||b.ps.length-a.ps.length);
     const sem=x.cl-x.au;
     return `<tr class="sub"><td colspan="10"><div class="comp">
       <div class="comp-h">${x.cl} clientes: ${x.au} auditados · ${x.li} limitação de escopo · ${x.eab} em aberto</div>
@@ -493,7 +494,7 @@ function painel(){
         <td>${(S.aprovRes||{})[c.cod+'|'+mes]?`<span class="pill p-${S.aprovRes[c.cod+'|'+mes].tipo==='mat'?'Materialidade':'Ressalvada'}">Aprovado por ${S.aprovRes[c.cod+'|'+mes].tipo==='mat'?'materialidade':'ressalva'}</span> <a href="#" data-desres="${c.cod}|${mes}">desfazer</a>`:ps.some(p=>!['Ressalvada','Materialidade','AprovadaPend'].includes(p.status))?`<div class="resbox"><button class="btn sm warn" data-aprres="${c.cod}|${mes}" data-tipo="res">Aprovado por ressalva</button><button class="btn sm ghost" data-aprres="${c.cod}|${mes}" data-tipo="mat">Aprovado por materialidade</button></div>`:''}</td></tr>`).join('')}
       </tbody></table></div>
       ${limTabela(x.e.id,true)}
-      ${x.eab?`<div class="comp-h" style="margin-top:14px">Em aberto (${x.eab}) <span class="muted">sem balancete e sem limitação informada</span></div><div class="muted" style="font-size:13px">${S.clientes.filter(c=>c.exec===x.e.id&&situacao(c.cod)==='aberto').map(c=>c.cod+' · '+esc(c.nome)).join('<br>')}</div>`:''}
+      ${x.eab?`<div class="comp-h" style="margin-top:14px">Em aberto (${x.eab}) <span class="muted">sem balancete e sem limitação informada</span></div><div class="muted" style="font-size:13px">${ATIVOS().filter(c=>c.exec===x.e.id&&situacao(c.cod)==='aberto').map(c=>c.cod+' · '+esc(c.nome)).join('<br>')}</div>`:''}
       </div></td></tr>`;
   };
   const compPrem=x=>`<tr class="sub"><td colspan="2"><div class="comp"><div class="tbl"><table><thead><tr><th>Cliente</th><th>Conta</th><th>Apontamento</th></tr></thead><tbody>
@@ -755,7 +756,7 @@ function bindLim(){
 }
 let meusFiltro='', limForm=null, refMes='';
 function meusView(){
-  const e=S.execs.find(x=>x.id===perfil); const cart=S.clientes.filter(c=>c.exec===perfil);
+  const e=S.execs.find(x=>x.id===perfil); const cart=ATIVOS().filter(c=>c.exec===perfil);
   if(!refMes) refMes=periodo.startsWith('M:')?periodo.slice(2):ultMes();
   const sit=c=>situacao(c.cod);
   const au=cart.filter(c=>sit(c)==='aud'), li=cart.filter(c=>sit(c)==='lim'), ab=cart.filter(c=>sit(c)==='aberto');
@@ -821,22 +822,76 @@ function minhas(){
   bindPeriodo(); $('#x-cli').value=exCod; $('#x-cli').onchange=ev=>{exCod=ev.target.value;render()};
   bindCards('exec');
 }
+let cliBusca='', cliEdit=null, cliInat=false;
+const SISTEMAS=['SAP B1','Domínio','Protheus','LINX','Outro'];
+function formCliente(c,novo){
+  const ops=(l,v)=>[...new Set(['',...l,v||''])].map(o=>`<option value="${esc(o)}"${o===(v||'')?' selected':''}>${esc(o||'Escolha…')}</option>`).join('');
+  return `<tr><td colspan="14"><div class="partic-form">
+   <b>${novo?'Novo cliente':'Editar cliente '+esc(c.cod)}</b>
+   <div class="row" style="align-items:flex-end">
+    <div class="field"><label for="ce-cod">Código</label><input id="ce-cod" value="${esc(c.cod||'')}" ${novo?'':'readonly'} style="width:90px"></div>
+    <div class="field" style="flex:1;min-width:240px"><label for="ce-nome">Razão social</label><input id="ce-nome" value="${esc(c.nome||'')}"></div>
+    <div class="field" style="min-width:200px"><label for="ce-grupo">Grupo</label><input id="ce-grupo" value="${esc(c.grupo||'')}"></div>
+    <div class="field"><label for="ce-trib">Tributação</label><input id="ce-trib" value="${esc(c.trib||'')}" list="ce-tribs"><datalist id="ce-tribs">${[...new Set(S.clientes.map(x=>x.trib).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+   </div>
+   <div class="row" style="align-items:flex-end">
+    <div class="field"><label for="ce-ex">Executivo</label><select id="ce-ex">${S.execs.map(e=>`<option value="${e.id}"${e.id===c.exec?' selected':''}>${esc(e.nome)}</option>`).join('')}<option value="__novo">+ Novo executivo…</option></select></div>
+    <div class="field" id="ce-exn-w" hidden><label for="ce-exn">Nome do novo executivo</label><input id="ce-exn"></div>
+    <div class="field" style="min-width:200px"><label for="ce-coord">Coordenador</label><input id="ce-coord" value="${esc(c.coord||'')}" list="ce-coords"><datalist id="ce-coords">${[...new Set(S.clientes.map(x=>x.coord).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+    <div class="field" style="min-width:200px"><label for="ce-an">Analista</label><input id="ce-an" value="${esc(c.analista||'')}" list="ce-ans"><datalist id="ce-ans">${[...new Set(S.clientes.map(x=>x.analista).filter(Boolean))].map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+    <div class="field"><label for="ce-sis">Sistema</label><select id="ce-sis">${ops(SISTEMAS,c.sistema)}</select></div>
+   </div>
+   <div class="row"><button class="btn sm" id="ce-ok">${novo?'Incluir cliente':'Salvar'}</button><button class="btn sm ghost" id="ce-x">Cancelar</button>
+    ${novo?'':`<span class="spacer"></span><button class="btn sm ${c.inativo?'ok':'bad'}" id="ce-inat">${c.inativo?'Reativar cliente':'Inativar cliente'}</button>`}</div>
+   ${novo?'':`<p class="muted" style="margin:0;font-size:12px">Inativar tira o cliente da carteira, dos totais, do % de aprovados e do resumo. O histórico fica guardado e dá para reativar.</p>`}
+  </div></td></tr>`;
+}
 function clientesView(){
-  $('#view').innerHTML=`<div><h1>Clientes e premissas</h1><p class="lead">Importe a carteira no mesmo formato da planilha do Thiago (Cod, Razão Social, Grupo, Tributação, Ass Responsável, Coo Responsável, Executivo, Status). Os limites de PMP e PMR e as premissas desligadas valem só para o cliente.</p></div>
-  <div class="row"><label class="btn ghost" style="display:inline-block">Importar carteira (Excel)<input type="file" id="imp" accept=".xlsx,.xls" hidden></label><span class="muted">${S.clientes.length} clientes · ${S.clientes.filter(c=>S.balancetes[c.cod]).length} com balancete</span></div>
-  <div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Grupo</th><th>Tributação</th><th>Executivo</th><th>Coordenador</th><th>Analista</th><th>Sistema</th><th class="num">PMP limite</th><th class="num">PMR limite</th><th>Premissas desligadas</th><th class="num">Particularidades</th><th>Histórico</th></tr></thead><tbody>
-  ${S.clientes.map((c,i)=>`<tr><td class="mono">${c.cod}</td><td>${esc(c.nome)}</td><td>${esc(c.grupo||'')}</td><td>${esc(c.trib||'')}</td><td>${esc(execNome(c.exec))}</td><td>${esc(nomeCurto(c.coord))}</td><td>${esc(nomeCurto(c.analista))}</td><td><select id="sis-${i}" data-i="${i}" data-k="sistema" aria-label="Sistema do cliente ${c.cod}" style="min-width:110px">${[...new Set(['','SAP B1','Domínio','Protheus','LINX','Outro',c.sistema||''])].map(o=>`<option value="${esc(o)}"${o===(c.sistema||'')?' selected':''}>${o||'Escolha…'}</option>`).join('')}</select></td>
+  const q=norm(cliBusca); const lista=S.clientes.filter(c=>(cliInat||!c.inativo)&&(!q||norm(c.cod+' '+c.nome+' '+(c.grupo||'')+' '+execNome(c.exec)+' '+(c.analista||'')).includes(q)));
+  const nInat=S.clientes.filter(c=>c.inativo).length;
+  $('#view').innerHTML=`<div><h1>Clientes e premissas</h1><p class="lead">Importe a carteira no mesmo formato da planilha do Thiago, ou inclua e edite clientes aqui. Os limites de PMP e PMR e as premissas desligadas valem só para o cliente.</p></div>
+  <div class="row"><label class="btn ghost" style="display:inline-block">Importar carteira (Excel)<input type="file" id="imp" accept=".xlsx,.xls" hidden></label><button class="btn" id="cli-novo">+ Novo cliente</button>
+   <div class="field"><label for="cli-q">Buscar</label><input id="cli-q" value="${esc(cliBusca)}" placeholder="Código, nome, grupo, executivo ou analista" style="min-width:280px"></div>
+   ${nInat?`<label class="muted"><input type="checkbox" id="cli-in" ${cliInat?'checked':''}> Mostrar inativos (${nInat})</label>`:''}
+   <span class="muted">${ATIVOS().length} clientes ativos · ${ATIVOS().filter(c=>S.balancetes[c.cod]).length} com balancete${q?' · '+lista.length+' na busca':''}</span></div>
+  <div class="tbl"><table><thead><tr><th></th><th>Código</th><th>Cliente</th><th>Grupo</th><th>Tributação</th><th>Executivo</th><th>Coordenador</th><th>Analista</th><th>Sistema</th><th class="num">PMP limite</th><th class="num">PMR limite</th><th>Premissas desligadas</th><th class="num">Particularidades</th><th>Histórico</th></tr></thead><tbody>
+  ${cliEdit==='__novo'?formCliente({pmp:60,pmr:45,exec:(S.execs[0]||{}).id},true):''}
+  ${lista.map(c=>{const i=S.clientes.indexOf(c);return `<tr${c.inativo?' style="opacity:.55"':''}><td><button class="btn sm ghost" data-ced="${esc(c.cod)}">Editar</button></td><td class="mono">${c.cod}${c.inativo?' <span class="pill p-Desconsiderada">inativo</span>':''}</td><td>${esc(c.nome)}</td><td>${esc(c.grupo||'')}</td><td>${esc(c.trib||'')}</td><td>${esc(execNome(c.exec))}</td><td>${esc(nomeCurto(c.coord))}</td><td>${esc(nomeCurto(c.analista))}</td>
+   <td><select id="sis-${i}" data-i="${i}" data-k="sistema" aria-label="Sistema do cliente ${c.cod}" style="min-width:110px">${[...new Set(['',...SISTEMAS,c.sistema||''])].map(o=>`<option value="${esc(o)}"${o===(c.sistema||'')?' selected':''}>${o||'Escolha…'}</option>`).join('')}</select></td>
    <td class="num"><input type="number" id="pmp-${i}" value="${c.pmp}" style="width:70px" data-i="${i}" data-k="pmp"></td>
    <td class="num"><input type="number" id="pmr-${i}" value="${c.pmr}" style="width:70px" data-i="${i}" data-k="pmr"></td>
    <td><input id="off-${i}" value="${(c.off||[]).join(', ')}" placeholder="ex.: P02, S03" style="width:120px" data-i="${i}" data-k="off"></td>
    <td class="num">${(c.partic||[]).length||''}</td>
-   <td><input id="obs-${i}" value="${esc(c.obs||'')}" style="min-width:200px" data-i="${i}" data-k="obs"></td></tr>`).join('')}
+   <td><input id="obs-${i}" value="${esc(c.obs||'')}" style="min-width:200px" data-i="${i}" data-k="obs"></td></tr>${cliEdit===c.cod?formCliente(c,false):''}`}).join('')||'<tr><td colspan="14" class="muted">Nenhum cliente encontrado.</td></tr>'}
   </tbody></table></div>
   <div><h2>Premissas gerais aplicadas a todos</h2><div class="tbl"><table><thead><tr><th>ID</th><th>Premissa</th><th>Criticidade</th></tr></thead><tbody>
   ${PREMISSAS.map(p=>`<tr><td class="mono">${p.id}</td><td>${esc(p.nome)}</td><td><span class="sev sev-${p.sev}"></span>${p.sev}</td></tr>`).join('')}</tbody></table></div></div>`;
-  document.querySelectorAll('input[data-k],select[data-k]').forEach(inp=>inp.onchange=()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
+  document.querySelectorAll('.tbl input[data-k],.tbl select[data-k]').forEach(inp=>inp.onchange=()=>{const c=S.clientes[inp.dataset.i],k=inp.dataset.k;
     c[k]=k==='sistema'?inp.value:k==='off'?inp.value.split(/[,\s]+/).map(s=>s.trim().toUpperCase()).filter(Boolean):k==='obs'?inp.value:+inp.value; save(); toast('Cliente atualizado')});
   $('#imp').onchange=async e=>{const f=e.target.files[0]; if(!f) return; try{const n=importarCarteira(await f.arrayBuffer()); save(); render(); toast(n+' clientes novos importados')}catch(err){toast(err.message)}};
+  let tq; $('#cli-q').oninput=e=>{clearTimeout(tq);tq=setTimeout(()=>{cliBusca=e.target.value;render();const el=$('#cli-q');el.focus();el.setSelectionRange(el.value.length,el.value.length)},250)};
+  if($('#cli-in')) $('#cli-in').onchange=e=>{cliInat=e.target.checked;render()};
+  $('#cli-novo').onclick=()=>{cliEdit='__novo';render();$('#ce-cod').focus()};
+  document.querySelectorAll('[data-ced]').forEach(b=>b.onclick=()=>{cliEdit=cliEdit===b.dataset.ced?null:b.dataset.ced;render()});
+  if(!cliEdit) return;
+  const novo=cliEdit==='__novo', c=novo?null:S.clientes.find(x=>x.cod===cliEdit);
+  $('#ce-ex').onchange=e=>{$('#ce-exn-w').hidden=e.target.value!=='__novo'};
+  $('#ce-x').onclick=()=>{cliEdit=null;render()};
+  if($('#ce-inat')) $('#ce-inat').onclick=()=>{c.inativo=!c.inativo;save();cliEdit=null;render();toast(c.inativo?'Cliente '+c.cod+' inativado':'Cliente '+c.cod+' reativado')};
+  $('#ce-ok').onclick=async()=>{
+    const cod=$('#ce-cod').value.trim(), nome=$('#ce-nome').value.trim();
+    if(!/^\d+$/.test(cod)) return toast('O código precisa ter só números');
+    if(!nome) return toast('Preencha a razão social');
+    if(novo&&S.clientes.some(x=>x.cod===cod)) return toast('Já existe um cliente com o código '+cod);
+    let ex=$('#ce-ex').value;
+    if(ex==='__novo'){const n=$('#ce-exn').value.trim(); if(!n) return toast('Escreva o nome do novo executivo');
+      let e=S.execs.find(x=>norm(x.nome)===norm(n)); if(!e){e={id:uid(),nome:n,token:typeof novoToken==='function'?novoToken():uid()+uid()+uid()};S.execs.push(e)} ex=e.id}
+    const alvo=novo?{cod,pmp:60,pmr:45,obs:'',off:[],partic:[]}:c; const trocouEx=!novo&&alvo.exec!==ex;
+    Object.assign(alvo,{nome,grupo:$('#ce-grupo').value.trim(),trib:$('#ce-trib').value.trim(),exec:ex,coord:$('#ce-coord').value.trim(),analista:$('#ce-an').value.trim(),sistema:$('#ce-sis').value});
+    if(novo) S.clientes.push(alvo);
+    if(trocouEx){S.pend.filter(p=>p.cod===cod).forEach(p=>p.exec=ex); if(typeof aoTrocarExec==='function'){$('#ce-ok').disabled=true;toast('Movendo balancetes e arquivos para o novo executivo…');try{await aoTrocarExec(cod,ex)}catch(e){toast('Não consegui mover os arquivos: '+e.message)}}}
+    save(); cliEdit=null; render(); toast(novo?'Cliente '+cod+' incluído':'Cliente '+cod+' atualizado');
+  };
 }
 function importarCarteira(buf){
   const wb=XLSX.read(buf,{type:'array',cellDates:true}); const aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});
@@ -873,7 +928,7 @@ function treinoView(){
 function execsView(){
   $('#view').innerHTML=`<div><h1>Executivos e links</h1><p class="lead">Cada executivo tem um link próprio com um código longo e aleatório. Se um link vazar, gere um novo e o antigo para de funcionar.</p></div>
   <div class="tbl"><table><thead><tr><th>Executivo</th><th class="num">Clientes</th><th>Link de acesso</th><th></th></tr></thead><tbody>
-  ${S.execs.map((e,i)=>`<tr><td>${esc(e.nome)}</td><td class="num">${S.clientes.filter(c=>c.exec===e.id).length}</td><td><div class="linkbox">${linkExec(e.token)}</div></td>
+  ${S.execs.map((e,i)=>`<tr><td>${esc(e.nome)}</td><td class="num">${ATIVOS().filter(c=>c.exec===e.id).length}</td><td><div class="linkbox">${linkExec(e.token)}</div></td>
   <td><button class="btn sm ghost" data-copy="${i}">Copiar</button> <button class="btn sm ghost" data-new="${i}">Gerar novo link</button></td></tr>`).join('')}
   </tbody></table></div>
   <div class="panel"><h2>Importar backup do protótipo</h2><p class="muted">Use uma vez para trazer o que você fez no protótipo. Substitui todos os dados do portal pelos do backup, incluindo os PDFs guardados.</p>
@@ -886,7 +941,7 @@ function execsView(){
 
 let resEx='';
 function resumoLinhas(){
-  return S.clientes.filter(c=>!resEx||c.exec===resEx).map(c=>{
+  return ATIVOS().filter(c=>!resEx||c.exec===resEx).map(c=>{
     const meses=Object.keys(S.balancetes[c.cod]||{}).filter(noPer).sort(); const ult=meses.at(-1);
     const ps=ult?S.pend.filter(p=>p.cod===c.cod&&p.mes===ult&&ATIVA(p)):[];
     const pontos=!ult?'':ps.length?[...new Set(ps.map(p=>(PM[p.premissa]||{nome:p.premissa}).nome+(p.recorrente?' (recorrente)':'')))].join(' / '):'Validado';
@@ -923,6 +978,7 @@ const MODO=TOKEN?'exec':'admin';
 const SEP='\u0001';
 const MAPAS=['pdf','ress','limArq','lim','aprovRes','visto','enviados'];
 const TIPOS_EXEC=['cli','pend','bal','pdf','ress','lim','limArq','enviados'];
+const sig=(ex,v)=>(ex||'')+'\u0002'+JSON.stringify(v);
 let snap=new Map(), tSync=null, sincronizando=false, pendenteSync=false, ultimaCarga=0;
 
 function novoToken(){const a=new Uint8Array(18);crypto.getRandomValues(a);return [...a].map(b=>b.toString(36).padStart(2,'0')).join('').slice(0,28)}
@@ -956,7 +1012,7 @@ async function sincronizar(){
   sincronizando=true;
   try{
     const L=linhasDeS(), up=[], del=[];
-    for(const [k,r] of L){const j=JSON.stringify(r.valor); if(snap.get(k)!==j) up.push({...r,_k:k,_j:j})}
+    for(const [k,r] of L){const j=sig(r.exec,r.valor); if(snap.get(k)!==j) up.push({...r,_k:k,_j:j})}
     for(const k of snap.keys()){if(!L.has(k)){const [tipo,chave]=k.split(SEP); if(tipo!=='bal') del.push({tipo,chave,_k:k})}}
     const lote=(arr,n)=>{const o=[];for(let i=0;i<arr.length;i+=n)o.push(arr.slice(i,i+n));return o};
     if(MODO==='exec'){
@@ -983,7 +1039,7 @@ function montarS(rows,balKeys){
   const N={execs:[],clientes:[],balancetes:{},pend:[],treino:[]}; snap=new Map();
   for(const r of rows){
     if(r.tipo==='bal'){const [cod,mes]=r.chave.split('|');(N.balancetes[cod]=N.balancetes[cod]||{})[mes]=null;continue}
-    snap.set(r.tipo+SEP+r.chave,JSON.stringify(r.valor));
+    snap.set(r.tipo+SEP+r.chave,sig(r.exec,r.valor));
     if(r.tipo==='exec') N.execs.push(r.valor); else if(r.tipo==='cli') N.clientes.push(r.valor); else if(r.tipo==='pend') N.pend.push(r.valor);
     else if(r.tipo==='treino') N.treino.push(r.valor); else if(MAPAS.includes(r.tipo)) (N[r.tipo]=N[r.tipo]||{})[r.chave]=r.valor;
   }
@@ -1000,7 +1056,15 @@ async function garantirBal(cod){
   const ms=S.balancetes[cod]; if(!ms) return; const ks=Object.keys(ms).filter(m=>ms[m]===null).map(m=>cod+'|'+m); if(!ks.length) return;
   const {data,error}=MODO==='exec'?await sb.rpc('ex_bal',{t:TOKEN,chaves:ks}):await sb.from('itens').select('chave,valor').eq('tipo','bal').in('chave',ks);
   if(error) throw error;
-  (data||[]).forEach(r=>{const mes=r.chave.split('|')[1]; ms[mes]=r.valor; snap.set('bal'+SEP+r.chave,JSON.stringify(r.valor))});
+  (data||[]).forEach(r=>{const mes=r.chave.split('|')[1]; ms[mes]=r.valor; snap.set('bal'+SEP+r.chave,sig(execDeCod(cod),r.valor))});
+}
+
+// ----- troca de executivo de um cliente: leva balancetes e arquivos -----
+async function aoTrocarExec(cod,ex){
+  if(MODO!=='admin') return;
+  await garantirBal(cod);
+  const aids=['pdf','ress','limArq'].map(m=>(S[m]||{})).flatMap(o=>Object.entries(o).filter(([k])=>k.split('|')[0]===cod).map(([,v])=>v.aid)).filter(Boolean);
+  if(aids.length){const {error}=await sb.from('arquivos').update({exec:ex}).in('id',aids); if(error) throw error}
 }
 
 // ----- arquivos -----
