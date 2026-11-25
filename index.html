@@ -418,9 +418,9 @@ const ATIVA=p=>!['Aprovada','Desconsiderada'].includes(p.status);
 const execNome=id=>(S.execs.find(e=>e.id===id)||{}).nome||'—';
 let periodo='';
 const noPer=m=>{if(!periodo)return true; const [k,v]=periodo.split(':'); if(k==='M')return m===v; const [y,q]=v.split('-'); return m.slice(0,4)===y&&Math.ceil(+m.slice(5,7)/3)===+q};
-const limDe=cod=>{const ks=Object.keys(S.lim||{}).filter(k=>k.startsWith(cod+'|')&&noPer(k.split('|')[1])&&S.lim[k].status!=='Recusada').sort();return ks.length?{k:ks.at(-1),mes:ks.at(-1).split('|')[1],...S.lim[ks.at(-1)]}:null};
+const limDe=(cod,tipo)=>{const ks=Object.keys(S.lim||{}).filter(k=>k.startsWith(cod+'|')&&noPer(k.split('|')[1])&&S.lim[k].status!=='Recusada'&&(tipo==='pendente'?S.lim[k].tipo==='pendente':S.lim[k].tipo!=='pendente')).sort();return ks.length?{k:ks.at(-1),mes:ks.at(-1).split('|')[1],...S.lim[ks.at(-1)]}:null};
 const auditado=cod=>Object.keys(S.balancetes[cod]||{}).some(noPer);
-const situacao=cod=>auditado(cod)?'aud':limDe(cod)?'lim':'aberto';
+const situacao=cod=>auditado(cod)?'aud':limDe(cod)?'lim':limDe(cod,'pendente')?'pend':'aberto';
 const ultMes=()=>{const ms=[].concat(...Object.values(S.balancetes).map(o=>Object.keys(o))).sort();return ms.at(-1)||new Date().toISOString().slice(0,7)};
 function selPeriodo(){
   const ms=[...new Set([].concat(...Object.values(S.balancetes).map(o=>Object.keys(o))))].sort().reverse();
@@ -498,27 +498,28 @@ function painel(){
     const ps=PP.filter(p=>p.exec===e.id&&p.status!=='Desconsiderada'&&(coord===undefined||cs.has(p.cod)));
     const A=ATIVOS().filter(cf);
     return {e,coord,cf,ps,ab:ps.filter(p=>p.status==='Aberta'||p.status==='Reprovada').length,ju:ps.filter(p=>p.status==='Justificada').length,rec:ps.filter(p=>p.recorrente).length,
-      ap:A.filter(c=>auditado(c.cod)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length,cl:A.length,au:A.filter(c=>auditado(c.cod)).length,li:A.filter(c=>situacao(c.cod)==='lim').length,eab:A.filter(c=>situacao(c.cod)==='aberto').length}};
+      ap:A.filter(c=>auditado(c.cod)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length,cl:A.length,au:A.filter(c=>auditado(c.cod)).length,li:A.filter(c=>situacao(c.cod)==='lim').length,pe:A.filter(c=>situacao(c.cod)==='pend').length,eab:A.filter(c=>situacao(c.cod)==='aberto').length}};
   const porExec=S.execs.map(e=>met(e));
   const porPrem=PREMISSAS.map(p=>({p,ps:PP.filter(x=>x.premissa===p.id&&ATIVA(x))})).filter(x=>x.ps.length).sort((a,b)=>b.ps.length-a.ps.length);
   const maxP=Math.max(1,...porPrem.map(x=>x.ps.length));
   const compExec=x=>{
     const cls=ATIVOS().filter(c=>x.cf(c)&&Object.keys(S.balancetes[c.cod]||{}).some(noPer)).map(c=>{const ps=x.ps.filter(p=>p.cod===c.cod&&ATIVA(p));const ms=Object.keys(S.balancetes[c.cod]).filter(noPer).sort();return {c,ps,mes:ms.at(-1)}}).sort((a,b)=>(!!(S.visto||{})[a.c.cod+'|'+a.mes])-(!!(S.visto||{})[b.c.cod+'|'+b.mes])||b.ps.length-a.ps.length);
     const sem=x.cl-x.au;
-    return `<tr class="sub"><td colspan="10"><div class="comp" style="padding-left:22px">
-      <div class="comp-h">${x.cl} clientes: ${x.au} auditados · ${x.li} limitação de escopo · ${x.eab} em aberto</div>
+    return `<tr class="sub"><td colspan="11"><div class="comp" style="padding-left:22px">
+      <div class="comp-h">${x.cl} clientes: ${x.au} auditados · ${x.li} limitação de escopo · ${x.pe} pendentes · ${x.eab} em aberto</div>
       <div class="tbl"><table><thead><tr><th style="width:40px">Visto ${info('Só um lembrete seu de que já olhou este cliente. Não muda status nem aprovação.')}</th><th>Código</th><th>Cliente</th><th>Analista</th><th>Balancete</th><th class="num">Pendências</th><th>Pontos</th><th>Cliente ${info('Aprovado por ressalva (precisa da ressalva anexada) ou por materialidade: o cliente conta como aprovado. As pendências ficam registradas com esse motivo e, se a conta continuar no próximo balancete, volta como pendência recorrente mostrando como foi aprovada.')}</th></tr></thead><tbody>
       ${cls.map(({c,ps,mes})=>`<tr class="click${(S.visto||{})[c.cod+'|'+mes]?' visto':''}" data-goc="${c.cod}" data-gox="${x.e.id}" tabindex="0"><td><button class="tic${(S.visto||{})[c.cod+'|'+mes]?' on':''}" data-tic="${c.cod}|${mes}" aria-pressed="${!!(S.visto||{})[c.cod+'|'+mes]}" title="${(S.visto||{})[c.cod+'|'+mes]?'Visto em '+S.visto[c.cod+'|'+mes]+'. Clique para desmarcar':'Marcar como visto'}">✓</button></td><td class="mono">${c.cod}</td><td>${esc(c.nome)}</td><td>${esc(nomeCurto(c.analista))}</td><td class="mono">${mes?mesTxt(mes):'—'} ${mes?btnPdf(c.cod,mes):''}${mes?'<br>'+btnRes(c.cod,mes):''}</td><td class="num">${ps.length||'<span class="pill p-Aprovada">Validado</span>'}</td>
         <td>${[...new Set(ps.map(p=>p.premissa))].map(id=>`<span class="chip" title="${esc(PM[id].nome)}"><span class="sev sev-${PM[id].sev}"></span>${id}</span>`).join(' ')}</td>
         <td>${(S.aprovRes||{})[c.cod+'|'+mes]?`<span class="pill p-${S.aprovRes[c.cod+'|'+mes].tipo==='mat'?'Materialidade':'Ressalvada'}">Aprovado por ${S.aprovRes[c.cod+'|'+mes].tipo==='mat'?'materialidade':'ressalva'}</span> <a href="#" data-desres="${c.cod}|${mes}">desfazer</a>`:ps.some(p=>!['Ressalvada','Materialidade','AprovadaPend'].includes(p.status))?`<div class="resbox"><button class="btn sm warn" data-aprres="${c.cod}|${mes}" data-tipo="res">Aprovado por ressalva</button><button class="btn sm ghost" data-aprres="${c.cod}|${mes}" data-tipo="mat">Aprovado por materialidade</button></div>`:''}</td></tr>`).join('')}
       </tbody></table></div>
       ${limTabela(x.e.id,true,x.cf)}
+      ${x.pe?`<div class="comp-h" style="margin-top:14px">Pendente (${x.pe}) <span class="muted">informado pelo executivo</span></div><div class="muted" style="font-size:13px">${ATIVOS().filter(c=>x.cf(c)&&situacao(c.cod)==='pend').map(c=>{const P=limDe(c.cod,'pendente');return c.cod+' · '+esc(c.nome)+' · '+mesTxt(P.mes)+(P.motivo?' · '+esc(P.motivo):'')}).join('<br>')}</div>`:''}
       ${x.eab?`<div class="comp-h" style="margin-top:14px">Em aberto (${x.eab}) <span class="muted">sem balancete e sem limitação informada</span></div><div class="muted" style="font-size:13px">${ATIVOS().filter(c=>x.cf(c)&&situacao(c.cod)==='aberto').map(c=>c.cod+' · '+esc(c.nome)).join('<br>')}</div>`:''}
       </div></td></tr>`;
   };
   const pctHtml=x=>{const pc=x.cl?x.ap/x.cl*100:0;return `<span class="pct ${pc>=META?'pct-ok':'pct-bad'}">${pc.toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span>`};
   const linhaMet=(x,co)=>{const k=co?x.e.id+'|'+x.coord:x.e.id, aberto=co?abreCo===k:abreEx===x.e.id, ga=`data-gx="${x.e.id}"${co?` data-gco="${esc(x.coord)}"`:''}`;
-    return `<tr class="click${aberto?' open':''}${co?' corow':''}" ${co?`data-tco="${esc(k)}"`:`data-tex="${x.e.id}"`} tabindex="0"><td>${co?'<span style="display:inline-block;width:18px"></span>':''}<span class="car">${aberto?'▾':'▸'}</span> ${co?`<span class="muted" style="font-size:11px">Coord.</span> ${esc(x.coord)}`:esc(x.e.nome)}</td><td class="num">${x.cl}</td><td class="num">${x.au}</td><td class="num">${x.li}</td><td class="num">${x.eab?`<span class="pct pct-bad">${x.eab}</span>`:'0'}</td>
+    return `<tr class="click${aberto?' open':''}${co?' corow':''}" ${co?`data-tco="${esc(k)}"`:`data-tex="${x.e.id}"`} tabindex="0"><td>${co?'<span style="display:inline-block;width:18px"></span>':''}<span class="car">${aberto?'▾':'▸'}</span> ${co?`<span class="muted" style="font-size:11px">Coord.</span> ${esc(x.coord)}`:esc(x.e.nome)}</td><td class="num">${x.cl}</td><td class="num">${x.au}</td><td class="num">${x.li}</td><td class="num">${x.pe}</td><td class="num">${x.eab?`<span class="pct pct-bad">${x.eab}</span>`:'0'}</td>
       <td class="num"><a href="#" ${ga} data-gs="Aberta">${x.ab}</a></td><td class="num"><a href="#" ${ga} data-gs="Justificada">${x.ju}</a></td><td class="num"><a href="#" ${ga} data-gr="1">${x.rec}</a></td><td class="num">${x.ap}</td><td class="num">${pctHtml(x)}</td></tr>`};
   const compPrem=x=>`<tr class="sub"><td colspan="2"><div class="comp"><div class="tbl"><table><thead><tr><th>Cliente</th><th>Conta</th><th>Apontamento</th></tr></thead><tbody>
       ${x.ps.map(p=>{const c=S.clientes.find(c=>c.cod===p.cod)||{};return `<tr class="click" data-goc="${p.cod}" data-gop="${x.p.id}" tabindex="0"><td>${p.cod} · ${esc(c.nome)}</td><td><span class="mono">${esc(p.conta)}</span> ${esc(p.contaNome)}</td><td>${esc(p.descr)}</td></tr>`}).join('')}
@@ -532,7 +533,7 @@ function painel(){
    <button class="kpi click" data-krec="1"><div class="l">Recorrentes ${info('Pendências que já tinham sido apontadas em meses anteriores e continuam em aberto.')}</div><div class="n">${rec}</div><div class="go">Ver recorrentes →</div></button>
    <button class="kpi click" data-kst="Reprovada"><div class="l">Reprovadas ${info('Justificativas que você reprovou. Voltam para o executivo corrigir.')}</div><div class="n">${rep}</div><div class="go">Ver reprovadas →</div></button>
   </div>
-  <div><h2>Por executivo</h2><div class="tbl"><table><thead><tr><th>Executivo ${info('Clique na linha para ver cada cliente auditado do executivo.')}</th><th class="num">Clientes ${info('Total de clientes da carteira do executivo.')}</th><th class="num">Auditados ${info('Clientes com balancete enviado e auditado no período escolhido.')}</th><th class="num">Limitação de escopo ${info('Clientes sem fechamento no mês, informados pelo executivo com a formalização anexada.')}</th><th class="num">Em aberto ${info('Clientes sem balancete e sem limitação de escopo informada. No fim, este número precisa ser zero.')}</th><th class="num">A resolver ${info('Pendências abertas ou reprovadas, que o executivo ainda precisa justificar ou corrigir.')}</th><th class="num">Para analisar ${info('Pendências que o executivo já justificou e esperam você aprovar ou reprovar.')}</th><th class="num">Recorrentes ${info('Pendências que já tinham sido apontadas em meses anteriores para a mesma conta.')}</th><th class="num">Aprovados ${info('Clientes auditados sem pendência aberta, justificada ou reprovada. Aprovado com pendência conta como aprovado.')}</th><th class="num">% Aprovados ${info('Aprovados ÷ total de clientes da carteira. Meta: '+META+'%. Abaixo da meta fica vermelho, igual ou acima fica azul.')}</th></tr></thead><tbody>
+  <div><h2>Por executivo</h2><div class="tbl"><table><thead><tr><th>Executivo ${info('Clique na linha para ver cada cliente auditado do executivo.')}</th><th class="num">Clientes ${info('Total de clientes da carteira do executivo.')}</th><th class="num">Auditados ${info('Clientes com balancete enviado e auditado no período escolhido.')}</th><th class="num">Limitação de escopo ${info('Clientes sem fechamento no mês, informados pelo executivo com a formalização anexada.')}</th><th class="num">Pendente ${info('Clientes que o executivo informou que vão ficar pendentes: sem balancete e sem limitação de escopo.')}</th><th class="num">Em aberto ${info('Clientes sem balancete e sem limitação de escopo informada. No fim, este número precisa ser zero.')}</th><th class="num">A resolver ${info('Pendências abertas ou reprovadas, que o executivo ainda precisa justificar ou corrigir.')}</th><th class="num">Para analisar ${info('Pendências que o executivo já justificou e esperam você aprovar ou reprovar.')}</th><th class="num">Recorrentes ${info('Pendências que já tinham sido apontadas em meses anteriores para a mesma conta.')}</th><th class="num">Aprovados ${info('Clientes auditados sem pendência aberta, justificada ou reprovada. Aprovado com pendência conta como aprovado.')}</th><th class="num">% Aprovados ${info('Aprovados ÷ total de clientes da carteira. Meta: '+META+'%. Abaixo da meta fica vermelho, igual ou acima fica azul.')}</th></tr></thead><tbody>
     ${porExec.map(x=>linhaMet(x,false)+(abreEx===x.e.id?[...new Set(ATIVOS().filter(c=>c.exec===x.e.id).map(coordNome))].sort().map(co=>{const xc=met(x.e,co);const k=x.e.id+'|'+co;return linhaMet(xc,true)+(abreCo===k?compExec(xc):'')}).join(''):'')).join('')}
   </tbody></table></div></div>
   <div><h2>Premissas mais apontadas</h2><div class="tbl"><table><thead><tr><th>Premissa ${info('Passe o mouse no ! de cada premissa para ver a regra. Clique na linha para ver os clientes e contas.')}</th><th class="num" style="width:40%">Pendências ${info('Pendências em aberto da premissa no período, sem contar as aprovadas e as marcadas como não pendência.')}</th></tr></thead><tbody>
@@ -762,7 +763,7 @@ function pendView(){
 let exCod='';
 const limSt={Enviada:'Aguardando sua análise',Aceita:'Aceita',Recusada:'Recusada'};
 function limTabela(exId,admin,cf){
-  const ls=Object.entries(S.lim||{}).filter(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return c&&c.exec===exId&&(!cf||cf(c))&&noPer(mes)&&!auditado(cod)});
+  const ls=Object.entries(S.lim||{}).filter(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return c&&c.exec===exId&&v.tipo!=='pendente'&&(!cf||cf(c))&&noPer(mes)&&!auditado(cod)});
   if(!ls.length) return '';
   return `<div class="comp-h" style="margin-top:14px">Limitação de escopo (${ls.length})</div><div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Mês</th><th>Motivo</th><th>Formalização</th><th>Situação</th></tr></thead><tbody>
    ${ls.map(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return `<tr><td class="mono">${cod}</td><td>${esc(c.nome)}</td><td class="mono">${mesTxt(mes)}</td><td>${esc(v.motivo)}</td>
@@ -782,33 +783,34 @@ function meusView(){
   const e=S.execs.find(x=>x.id===perfil); const cart=ATIVOS().filter(c=>c.exec===perfil);
   if(!refMes) refMes=periodo.startsWith('M:')?periodo.slice(2):ultMes();
   const sit=c=>situacao(c.cod);
-  const au=cart.filter(c=>sit(c)==='aud'), li=cart.filter(c=>sit(c)==='lim'), ab=cart.filter(c=>sit(c)==='aberto');
+  const au=cart.filter(c=>sit(c)==='aud'), li=cart.filter(c=>sit(c)==='lim'), pe=cart.filter(c=>sit(c)==='pend'), ab=cart.filter(c=>sit(c)==='aberto');
   const PP=S.pend.filter(p=>p.exec===perfil&&noPer(p.mes)&&p.status!=='Desconsiderada');
   const ap=au.filter(c=>!PP.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length;
   const pc=cart.length?ap/cart.length*100:0;
-  const lista=cart.filter(c=>!meusFiltro||sit(c)===meusFiltro).sort((a,b)=>({aberto:0,lim:1,aud:2}[sit(a)]-{aberto:0,lim:1,aud:2}[sit(b)])||a.nome.localeCompare(b.nome));
+  const lista=cart.filter(c=>!meusFiltro||sit(c)===meusFiltro).sort((a,b)=>({aberto:0,pend:1,lim:2,aud:3}[sit(a)]-{aberto:0,pend:1,lim:2,aud:3}[sit(b)])||a.nome.localeCompare(b.nome));
   $('#view').innerHTML=`<div><h1>Olá, ${esc(e.nome)}</h1><p class="lead">Aqui está a situação da sua carteira. Suba os balancetes em "Subir balancetes". Para cliente sem fechamento no mês, informe a limitação de escopo e anexe a formalização enviada ao cliente. No fim, todos os clientes precisam estar auditados ou com limitação de escopo.</p></div>
   ${MODO==='admin'?'<div class="demo">Assim o executivo vê o portal quando abre o link dele.</div>':''}
-  <div class="row">${selPeriodo()}<div class="field"><label for="m-ref">Mês de referência da limitação</label><input type="month" id="m-ref" value="${refMes}"></div></div>
+  <div class="row">${selPeriodo()}<div class="field"><label for="m-ref">Mês de referência</label><input type="month" id="m-ref" value="${refMes}"></div></div>
   <div class="kpis">
    <button class="kpi click" data-mf=""><div class="l">Clientes</div><div class="n">${cart.length}</div><div class="go">Ver todos →</div></button>
    <button class="kpi click" data-mf="aud"><div class="l">Auditados ${info('Clientes com balancete enviado no período.')}</div><div class="n">${au.length}</div><div class="go">Ver →</div></button>
    <button class="kpi click" data-mf="lim"><div class="l">Limitação de escopo ${info('Clientes sem fechamento no mês, com formalização anexada.')}</div><div class="n">${li.length}</div><div class="go">Ver →</div></button>
-   <button class="kpi click" data-mf="aberto"><div class="l">Faltam ${info('Clientes sem balancete e sem limitação de escopo. Precisa chegar a zero.')}</div><div class="n" style="color:${ab.length?'var(--bad)':'var(--ok)'}">${ab.length}</div><div class="go">Ver os que faltam →</div></button>
+   <button class="kpi click" data-mf="pend"><div class="l">Pendente ${info('Clientes que você informou que vão ficar pendentes, sem limitação de escopo.')}</div><div class="n">${pe.length}</div><div class="go">Ver →</div></button>
+   <button class="kpi click" data-mf="aberto"><div class="l">Faltam informar ${info('Clientes sem balancete, sem limitação de escopo e sem marcação de pendente. Precisa chegar a zero.')}</div><div class="n" style="color:${ab.length?'var(--bad)':'var(--ok)'}">${ab.length}</div><div class="go">Ver os que faltam →</div></button>
    <div class="kpi"><div class="l">% Aprovados ${info('Clientes aprovados ÷ total da carteira. Meta: '+META+'%.')}</div><div class="n"><span class="pct ${pc>=META?'pct-ok':'pct-bad'}">${pc.toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span></div><div class="go">${ap} de ${cart.length} aprovados</div></div>
   </div>
   ${ab.length?`<p style="margin:0"><b>De ${cart.length} clientes cadastrados, faltam ${ab.length} balancetes.</b> <button class="btn sm" data-goenv>Subir balancetes</button></p>`:`<p style="margin:0;color:var(--ok)"><b>Todos os ${cart.length} clientes estão apontados.</b></p>`}
   <div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Sistema</th><th>Situação</th><th>Arquivos</th><th class="num">Pendências</th><th></th></tr></thead><tbody>
-  ${lista.map(c=>{const st=sit(c); const ms=Object.keys(S.balancetes[c.cod]||{}).filter(noPer).sort(); const mes=ms.at(-1); const L=limDe(c.cod); const recus=Object.entries(S.lim||{}).find(([k,v])=>k.startsWith(c.cod+'|')&&noPer(k.split('|')[1])&&v.status==='Recusada');
+  ${lista.map(c=>{const st=sit(c); const ms=Object.keys(S.balancetes[c.cod]||{}).filter(noPer).sort(); const mes=ms.at(-1); const L=limDe(c.cod), P=limDe(c.cod,'pendente'); const recus=Object.entries(S.lim||{}).find(([k,v])=>k.startsWith(c.cod+'|')&&noPer(k.split('|')[1])&&v.status==='Recusada');
    const np=PP.filter(p=>p.cod===c.cod&&ATIVA(p)).length;
    return `<tr><td class="mono">${c.cod}</td><td>${esc(c.nome)}</td><td>${esc(c.sistema||'')}</td>
-    <td>${st==='aud'?`<span class="pill p-Aprovada">Auditado ${mesTxt(mes)}</span>`:st==='lim'?`<span class="pill p-AprovadaPend">Limitação de escopo ${mesTxt(L.mes)}</span><div class="muted" style="font-size:12px">${esc(L.motivo)} · ${L.status==='Enviada'?'enviada ao Carlos':L.status.toLowerCase()}</div>`:`<span class="pill p-Aberta">Falta balancete</span>${recus?'<div class="muted" style="font-size:12px;color:var(--bad)">Limitação recusada pelo Carlos</div>':''}`}</td>
+    <td>${st==='aud'?`<span class="pill p-Aprovada">Auditado ${mesTxt(mes)}</span>`:st==='lim'?`<span class="pill p-AprovadaPend">Limitação de escopo ${mesTxt(L.mes)}</span><div class="muted" style="font-size:12px">${esc(L.motivo)} · ${L.status==='Enviada'?'enviada ao Carlos':L.status.toLowerCase()}</div>`:st==='pend'?`<span class="pill p-Reprovada">Pendente ${mesTxt(P.mes)}</span><div class="muted" style="font-size:12px">Informado por você: vai ficar pendente</div>`:`<span class="pill p-Aberta">Falta balancete</span>${recus?'<div class="muted" style="font-size:12px;color:var(--bad)">Limitação recusada pelo Carlos</div>':''}`}</td>
     <td>${st==='aud'?btnPdf(c.cod,mes)+' '+btnRes(c.cod,mes):st==='lim'&&(S.limArq||{})[L.k]?`<button class="pdfbtn" data-limv="${L.k}">Formalização</button>`:''}</td>
     <td class="num">${st==='aud'?(np?`<a href="#" data-gomin="${c.cod}">${np}</a>`:'<span class="pill p-Aprovada">Validado</span>'):''}</td>
-    <td>${st==='aberto'?`<button class="btn sm ghost" data-limopen="${c.cod}">Limitação de escopo</button>`:st==='lim'&&L.status==='Enviada'?`<a href="#" data-limdel="${L.k}">desfazer</a>`:''}</td></tr>
+    <td>${st==='aberto'?`<div class="resbox"><button class="btn sm ghost" data-limopen="${c.cod}">Limitação de escopo</button><button class="btn sm bad" data-pendmk="${c.cod}" title="Não há limitação de escopo: o cliente vai ficar pendente neste mês">Pendente</button></div>`:st==='lim'&&L.status==='Enviada'?`<a href="#" data-limdel="${L.k}">desfazer</a>`:st==='pend'?`<a href="#" data-limdel="${P.k}">desfazer</a>`:''}</td></tr>
     ${limForm===c.cod?`<tr><td colspan="7"><div class="partic-form">
       <b>Limitação de escopo · ${c.cod} · ${esc(c.nome)} · ${mesTxt(refMes)}</b>
-      <label class="field" for="lf-m">Motivo</label><textarea id="lf-m">Não tenho fechamento para este mês.</textarea>
+      <label class="field" for="lf-m">Motivo</label><textarea id="lf-m">Devido ao atraso do cliente na entrega dos documentos, no fechamento bancário ou por falha do sistema, não houve fechamento neste mês. Limitação conforme anexo.</textarea>
       <label class="field" for="lf-a">Formalização enviada ao cliente com as pendências (obrigatório)</label><input type="file" id="lf-a" accept="${'.pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.msg,.eml'}">
       <div class="row"><button class="btn sm" id="lf-ok">Enviar ao Carlos</button><button class="btn sm ghost" id="lf-x">Cancelar</button></div></div></td></tr>`:''}`}).join('')||'<tr><td colspan="7" class="muted">Nenhum cliente nesta situação.</td></tr>'}
   </tbody></table></div>`;
@@ -820,6 +822,8 @@ function meusView(){
   document.querySelectorAll('[data-limopen]').forEach(b=>b.onclick=()=>{limForm=b.dataset.limopen;render()});
   document.querySelectorAll('[data-limdel]').forEach(a=>a.onclick=ev=>{ev.preventDefault();delete S.lim[a.dataset.limdel];save();render();toast('Limitação de escopo removida')});
   if($('#lf-x')) $('#lf-x').onclick=()=>{limForm=null;render()};
+  document.querySelectorAll('[data-pendmk]').forEach(b=>b.onclick=()=>{if(!refMes) return toast('Escolha o mês de referência');
+    S.lim=S.lim||{}; S.lim[b.dataset.pendmk+'|'+refMes]={tipo:'pendente',motivo:'',status:'Enviada',data:new Date().toISOString().slice(0,10),exec:perfil}; save(); render(); toast('Cliente '+b.dataset.pendmk+' marcado como pendente em '+mesTxt(refMes))});
   if($('#lf-ok')) $('#lf-ok').onclick=async()=>{const m=$('#lf-m').value.trim(), f=$('#lf-a').files[0];
     if(!m) return toast('Escreva o motivo'); if(!f) return toast('Anexe a formalização enviada ao cliente');
     if(!refMes) return toast('Escolha o mês de referência');
@@ -1058,7 +1062,7 @@ function resumoLinhas(){
     const ps=ult?S.pend.filter(p=>p.cod===c.cod&&p.mes===ult&&ATIVA(p)):[];
     const pontos=!ult?'':ps.length?[...new Set(ps.map(p=>(PM[p.premissa]||{nome:p.premissa}).nome+(p.recorrente?' (recorrente)':'')))].join(' / '):'Validado';
     const ressalva=((S.aprovRes||{})[c.cod+'|'+ult]||{}).tipo==='res'||ps.some(p=>p.status==='AprovadaPend'||p.status==='Ressalvada')?'Sim':'NA';
-    return {cod:c.cod,razao:c.nome,grupo:c.grupo||'',hub:c.trib||c.hub||'',resp:c.analista||execNome(c.exec),pontos,ressalva,lim:ult?'NA':(()=>{const L=limDe(c.cod);return L?'Limitação de escopo ('+mesTxt(L.mes)+'): '+L.motivo+(L.status==='Aceita'?'':' · '+limSt[L.status].toLowerCase()):'Balancete não enviado'})(),mes:ult?mesTxt(ult):'—',ant:c.statusAnt||''};
+    return {cod:c.cod,razao:c.nome,grupo:c.grupo||'',hub:c.trib||c.hub||'',resp:c.analista||execNome(c.exec),pontos,ressalva,lim:ult?'NA':(()=>{const L=limDe(c.cod);const P=limDe(c.cod,'pendente');return L?'Limitação de escopo ('+mesTxt(L.mes)+'): '+L.motivo+(L.status==='Aceita'?'':' · '+limSt[L.status].toLowerCase()):P?'Pendente ('+mesTxt(P.mes)+'), informado pelo executivo':'Balancete não enviado'})(),mes:ult?mesTxt(ult):'—',ant:c.statusAnt||''};
   }).sort((a,b)=>(a.mes==='—')-(b.mes==='—')||a.grupo.localeCompare(b.grupo));
 }
 function resumoView(){
