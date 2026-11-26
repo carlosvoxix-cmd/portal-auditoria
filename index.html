@@ -420,6 +420,7 @@ let periodo='';
 const noPer=m=>{if(!periodo)return true; const [k,v]=periodo.split(':'); if(k==='M')return m===v; const [y,q]=v.split('-'); return m.slice(0,4)===y&&Math.ceil(+m.slice(5,7)/3)===+q};
 const limDe=(cod,tipo)=>{const ks=Object.keys(S.lim||{}).filter(k=>k.startsWith(cod+'|')&&noPer(k.split('|')[1])&&S.lim[k].status!=='Recusada'&&(tipo==='pendente'?S.lim[k].tipo==='pendente':S.lim[k].tipo!=='pendente')).sort();return ks.length?{k:ks.at(-1),mes:ks.at(-1).split('|')[1],...S.lim[ks.at(-1)]}:null};
 const auditado=cod=>Object.keys(S.balancetes[cod]||{}).some(noPer);
+const limAprov=cod=>{const L=limDe(cod);return !!L&&L.status==='Aceita'};
 const situacao=cod=>auditado(cod)?'aud':limDe(cod)?'lim':limDe(cod,'pendente')?'pend':'aberto';
 const ultMes=()=>{const ms=[].concat(...Object.values(S.balancetes).map(o=>Object.keys(o))).sort();return ms.at(-1)||new Date().toISOString().slice(0,7)};
 function selPeriodo(){
@@ -498,7 +499,7 @@ function painel(){
     const ps=PP.filter(p=>p.exec===e.id&&p.status!=='Desconsiderada'&&(coord===undefined||cs.has(p.cod)));
     const A=ATIVOS().filter(cf);
     return {e,coord,cf,ps,ab:ps.filter(p=>p.status==='Aberta'||p.status==='Reprovada').length,ju:ps.filter(p=>p.status==='Justificada').length,rec:ps.filter(p=>p.recorrente).length,
-      ap:A.filter(c=>auditado(c.cod)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length,cl:A.length,au:A.filter(c=>auditado(c.cod)).length,li:A.filter(c=>situacao(c.cod)==='lim').length,pe:A.filter(c=>situacao(c.cod)==='pend').length,eab:A.filter(c=>situacao(c.cod)==='aberto').length}};
+      ap:A.filter(c=>auditado(c.cod)&&!ps.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length+A.filter(c=>situacao(c.cod)==='lim'&&limAprov(c.cod)).length,cl:A.length,au:A.filter(c=>auditado(c.cod)).length,li:A.filter(c=>situacao(c.cod)==='lim').length,pe:A.filter(c=>situacao(c.cod)==='pend').length,eab:A.filter(c=>situacao(c.cod)==='aberto').length}};
   const porExec=S.execs.map(e=>met(e));
   const porPrem=PREMISSAS.map(p=>({p,ps:PP.filter(x=>x.premissa===p.id&&ATIVA(x))})).filter(x=>x.ps.length).sort((a,b)=>b.ps.length-a.ps.length);
   const maxP=Math.max(1,...porPrem.map(x=>x.ps.length));
@@ -761,20 +762,20 @@ function pendView(){
   bindCards('admin');
 }
 let exCod='';
-const limSt={Enviada:'Aguardando sua análise',Aceita:'Aceita',Recusada:'Recusada'};
+const limSt={Enviada:'Aguardando sua aprovação',Aceita:'Aprovada (conta no % aprovados)',Recusada:'Recusada'};
 function limTabela(exId,admin,cf){
   const ls=Object.entries(S.lim||{}).filter(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return c&&c.exec===exId&&v.tipo!=='pendente'&&(!cf||cf(c))&&noPer(mes)&&!auditado(cod)});
   if(!ls.length) return '';
-  return `<div class="comp-h" style="margin-top:14px">Limitação de escopo (${ls.length})</div><div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Mês</th><th>Motivo</th><th>Formalização</th><th>Situação</th></tr></thead><tbody>
-   ${ls.map(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return `<tr><td class="mono">${cod}</td><td>${esc(c.nome)}</td><td class="mono">${mesTxt(mes)}</td><td>${esc(v.motivo)}</td>
+  return `<div class="comp-h" style="margin-top:14px">Limitação de escopo (${ls.length})${admin&&ls.some(([k,v])=>v.status==='Enviada')?` <span class="pill p-Justificada">${ls.filter(([k,v])=>v.status==='Enviada').length} aguardando sua aprovação</span>`:''} <span class="muted">aprovada conta como cliente aprovado no índice</span></div><div class="tbl"><table><thead><tr><th>Código</th><th>Cliente</th><th>Mês</th><th>Formalização</th><th>Situação</th><th>Motivo</th></tr></thead><tbody>
+   ${ls.map(([k,v])=>{const [cod,mes]=k.split('|');const c=S.clientes.find(c=>c.cod===cod);return `<tr><td class="mono">${cod}</td><td>${esc(c.nome)}</td><td class="mono">${mesTxt(mes)}</td>
     <td>${(S.limArq||{})[k]?`<button class="pdfbtn" data-limv="${k}">Abrir</button>`:'<span class="muted">sem arquivo</span>'}</td>
     <td><span class="pill p-${v.status==='Aceita'?'Aprovada':v.status==='Recusada'?'Reprovada':'Justificada'}">${limSt[v.status]&&!admin&&v.status==='Enviada'?'Enviada ao Carlos':limSt[v.status]}</span>${v.parecer?`<div class="muted" style="font-size:12px">${esc(v.parecer)}</div>`:''}
-    ${admin&&v.status==='Enviada'?`<div class="row" style="gap:6px;margin-top:4px"><button class="btn sm ok" data-lima="${k}">Aceitar</button><button class="btn sm bad" data-limr="${k}">Recusar</button></div>`:admin?`<a href="#" data-limu="${k}">desfazer</a>`:''}</td></tr>`}).join('')}
+    ${admin&&v.status==='Enviada'?`<div class="row" style="gap:6px;margin-top:4px"><button class="btn sm ok" data-lima="${k}">Aprovar limitação</button><button class="btn sm bad" data-limr="${k}">Recusar</button></div>`:admin?`<a href="#" data-limu="${k}">desfazer</a>`:''}</td><td style="min-width:200px;max-width:320px;white-space:normal">${esc(v.motivo)}</td></tr>`}).join('')}
    </tbody></table></div>`;
 }
 function bindLim(){
   document.querySelectorAll('[data-limv]').forEach(b=>b.onclick=e=>{e.stopPropagation();abrirPdf(b.dataset.limv,'limArq')});
-  document.querySelectorAll('[data-lima]').forEach(b=>b.onclick=e=>{e.stopPropagation();S.lim[b.dataset.lima].status='Aceita';save();render();toast('Limitação de escopo aceita')});
+  document.querySelectorAll('[data-lima]').forEach(b=>b.onclick=e=>{e.stopPropagation();S.lim[b.dataset.lima].status='Aceita';save();render();toast('Limitação aprovada. O cliente conta como aprovado no índice.')});
   document.querySelectorAll('[data-limr]').forEach(b=>b.onclick=e=>{e.stopPropagation();S.lim[b.dataset.limr].status='Recusada';S.lim[b.dataset.limr].parecer='Recusada pelo Carlos';save();render();toast('Limitação recusada. O cliente volta para "Em aberto".')});
   document.querySelectorAll('[data-limu]').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();S.lim[a.dataset.limu].status='Enviada';delete S.lim[a.dataset.limu].parecer;save();render()});
 }
@@ -785,7 +786,7 @@ function meusView(){
   const sit=c=>situacao(c.cod);
   const au=cart.filter(c=>sit(c)==='aud'), li=cart.filter(c=>sit(c)==='lim'), pe=cart.filter(c=>sit(c)==='pend'), ab=cart.filter(c=>sit(c)==='aberto');
   const PP=S.pend.filter(p=>p.exec===perfil&&noPer(p.mes)&&p.status!=='Desconsiderada');
-  const ap=au.filter(c=>!PP.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length;
+  const ap=au.filter(c=>!PP.some(p=>p.cod===c.cod&&['Aberta','Justificada','Reprovada'].includes(p.status))).length+li.filter(c=>limAprov(c.cod)).length;
   const pc=cart.length?ap/cart.length*100:0;
   const lista=cart.filter(c=>!meusFiltro||sit(c)===meusFiltro).sort((a,b)=>({aberto:0,pend:1,lim:2,aud:3}[sit(a)]-{aberto:0,pend:1,lim:2,aud:3}[sit(b)])||a.nome.localeCompare(b.nome));
   $('#view').innerHTML=`<div><h1>Olá, ${esc(e.nome)}</h1><p class="lead">Aqui está a situação da sua carteira. Suba os balancetes em "Subir balancetes". Para cliente sem fechamento no mês, informe a limitação de escopo e anexe a formalização enviada ao cliente. No fim, todos os clientes precisam estar auditados ou com limitação de escopo.</p></div>
