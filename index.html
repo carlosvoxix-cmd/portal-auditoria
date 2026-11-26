@@ -222,16 +222,25 @@ async function pdfParaLinhas(buf){
       // separa "- 1.234,56" e itens com vários números
       const parts=s.trim().split(/\s{2,}|(?<=^-)\s+(?=\d)/); let off=0; const tot=s.length||1;
       for(const p of parts){const idx=s.indexOf(p,off); off=idx+p.length;
-        const tk={s:p,x:x+w*idx/tot,x1:x+w*(idx+p.length)/tot,y};
-        (by.get(y)||by.set(y,[]).get(y)).push(tk);}
+        const x0=x+w*idx/tot, x1=x+w*(idx+p.length)/tot, arr=(by.get(y)||by.set(y,[]).get(y));
+        // SAP "R$ -1.234,56": tira o R$ e mantém o sinal
+        let q=p.replace(/^(-?)R\$\s*(-?)(?=[\d.]*\d,\d{2}$)/,'$1$2');
+        // SAP "1.01.01.01.0001 - CAIXA GERAL": separa código e descrição
+        const cm=q.match(/^(\d+(?:\.\d+)+)\s+[-–]\s+(.+)$/);
+        if(cm){const xm=x0+(x1-x0)*cm[1].length/q.length; arr.push({s:cm[1],x:x0,x1:xm,y}); arr.push({s:cm[2],x:x0+(x1-x0)*(q.length-cm[2].length)/q.length,x1,y});}
+        else arr.push({s:q,x:x0,x1,y});}
       texto+=s+'\n';
     }
-    [...by.keys()].sort((a,b)=>b-a).forEach(y=>linhas.push({pg:i,y,t:by.get(y).sort((a,b)=>a.x-b.x)}));
+    // junta linhas com diferença de até 1pt na altura (SAP: valor 0,5pt abaixo do nome do grupo)
+    const ys=[...by.keys()].sort((a,b)=>b-a); const grp=[];
+    ys.forEach(y=>{const g=grp.at(-1); if(g&&g.y0-y<=1){g.t.push(...by.get(y))} else grp.push({y0:y,y,t:[...by.get(y)]})});
+    grp.forEach(g=>linhas.push({pg:i,y:g.y,t:g.t.sort((a,b)=>a.x-b.x)}));
   }
   return {linhas,texto};
 }
 function detectarFormato(texto){
   if(/Cta\.cont/i.test(texto)) return 'SAP B1';
+  if(/Moeda do sistema/i.test(texto)) return 'SAP B1';
   if(/filiais SAP|Extenso/i.test(texto)) return 'SAP B1 (gerencial)';
   if(/Classifica/i.test(texto)&&/Descri..o da conta/i.test(texto)) return 'Domínio';
   return 'Desconhecido';
@@ -275,10 +284,10 @@ function interpretarBalancete({linhas,texto},nomeArq,modoConta){
       if(t.x<xNum0||!temNum) txt.push(t.s);
     }
     const desc=txt.join(' ').replace(/\s+/g,' ').trim();
-    if(/^(Código|Extenso|Cta\.)/i.test(desc)||/Saldo Anterior|Sd\. Anterior/i.test(desc)) continue;
+    if(/^(Código|Extenso|Cta\.|Conta Moeda|SI Débito)/i.test(desc)||/Saldo Anterior|Sd\. Anterior/i.test(desc)) continue;
     if(!codes.length&&desc&&desc!=='-'&&!/^(P[aá]gina|Folha|Emiss|Sistema licenciado)/i.test(desc)){heads.push(desc);if(heads.length>4)heads.shift()}
-    if(codes.length&&!temNum){pend={codes,desc,pg:l.pg};continue}
-    if(!codes.length&&temNum&&pend&&(!desc||desc==='-')){
+    if(codes.length&&!temNum){pend={codes,desc,pg:l.pg,y:l.y};continue}
+    if(!codes.length&&temNum&&pend&&(!desc||desc==='-')&&l.pg===pend.pg&&pend.y-l.y<=12){
       rows.push(mk(pend.codes,pend.desc,nums)); pend=null; continue;}
     pend=null;
     if(codes.length&&temNum) rows.push(mk(codes,desc,nums));
